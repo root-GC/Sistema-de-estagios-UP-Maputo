@@ -1,32 +1,45 @@
 <?php
-
+// ============================================================
+// app/Models/User.php
+// ============================================================
 namespace App\Models;
-
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
+ 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
+use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Notifications\Notifiable;   // <-- importa a trait
+use App\Notifications\ResetPasswordNotification; 
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
-
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
+    use HasApiTokens, HasFactory, Notifiable; 
+ 
+    protected $fillable = ['name', 'email', 'password', 'status'];
+    protected $hidden   = ['password', 'remember_token'];
+    protected $casts    = ['password' => 'hashed'];
+ 
+    public function roles()           { return $this->belongsToMany(Role::class, 'user_roles'); }
+    public function admin()           { return $this->hasOne(Admin::class); }
+    public function studentProfile()  { return $this->hasOne(StudentProfile::class); }
+    public function supervisorProfile(){ return $this->hasOne(SupervisorProfile::class); }
+    public function coordinator()     { return $this->hasOne(Coordinator::class); }
+    public function departmentHead()  { return $this->hasOne(DepartmentHead::class); }
+    public function notifications()   { return $this->hasMany(Notification::class); }
+    public function auditLogs()       { return $this->hasMany(AuditLog::class); }
+ 
+    public function hasRole(string ...$roles): bool
     {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
+        return $this->roles->whereIn('name', $roles)->isNotEmpty();
+    }
+ 
+    public function hasPermission(string $permission): bool
+    {
+        return $this->roles->flatMap->permissions->contains('name', $permission);
+    }
+        /**
+     * Envia a notificação de redefinição de palavra‑passe.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordNotification($token));
     }
 }
