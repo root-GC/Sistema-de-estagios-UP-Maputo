@@ -127,24 +127,29 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // ── INSTITUIÇÕES PARCEIRAS & TUTORES ─────────────────
+       // ── INSTITUIÇÕES PARCEIRAS & TUTORES ─────────────────
         Schema::create('partner_institutions', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->text('address')->nullable();
             $table->string('phone', 30)->nullable();
             $table->string('email')->nullable();
+            $table->string('status')->default('pendente');
+            $table->string('nuit')->nullable();
+            $table->string('ponto_focal_nome')->nullable();
+            $table->string('ponto_focal_contacto')->nullable();
             $table->timestamps();
         });
 
         Schema::create('tutors', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete(); // ← novo
             $table->foreignId('institution_id')->constrained('partner_institutions')->cascadeOnDelete();
             $table->string('name');
             $table->string('email')->unique();
             $table->string('phone', 30)->nullable();
             $table->string('position')->nullable();
-            $table->string('access_token', 80)->nullable()->unique(); // acesso externo RF-019
+            $table->string('access_token', 80)->nullable()->unique(); // mantido para links externos, se necessário
             $table->timestamps();
         });
 

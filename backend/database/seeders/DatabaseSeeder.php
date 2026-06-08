@@ -42,6 +42,12 @@ class DatabaseSeeder extends Seeder
                 ['Estudante 1 (OK)',  'est1@up.ac.mz',         'password'],
                 ['Estudante 2 (OK)',  'est2@up.ac.mz',         'password'],
                 ['Estudante 3 (NOK)', 'est3@up.ac.mz',         'password'],
+                ['Tutor Vodacom (PF)', 'marcia.guambe@vodacom.co.mz', 'password'],
+                ['Tutor Vodacom',      'tutor@vodacom.co.mz',       'password'],
+                ['Tutor EMOSE (PF)',   'carlos.nhantumbo@emose.co.mz', 'password'],
+                ['Tutor EMOSE',        'isabel.tivane@emose.co.mz',   'password'],
+                ['Tutor MCel (PF)',    'sergio.matola@mcel.co.mz',     'password'],
+                ['Tutor TVM (PF)',     'ana.cumbe@tvm.co.mz',          'password'],
             ]
         );
     }
@@ -222,32 +228,129 @@ class DatabaseSeeder extends Seeder
     // ─────────────────────────────────────────────────────────
     private function seedInstitutions(): void
     {
-        $inst = PartnerInstitution::firstOrCreate(
+        // 1 – Vodacom (aprovada)
+        $vodacom = PartnerInstitution::firstOrCreate(
             ['name' => 'Vodacom Moçambique'],
             [
-                'address' => 'Av. 25 de Setembro, 1230, Maputo',
-                'phone'   => '+258 21 350 000',
-                'email'   => 'rh@vodacom.co.mz',
+                'address'             => 'Av. 25 de Setembro, 1230, Maputo',
+                'phone'               => '+258 21 350 000',
+                'email'               => 'rh@vodacom.co.mz',
+                'nuit'                => '400123456',
+                'ponto_focal_nome'     => 'Dra. Márcia Guambe',
+                'ponto_focal_contacto' => 'marcia.guambe@vodacom.co.mz',
+                'status'              => 'aprovada',
             ]
         );
 
+        // Ponto focal (tutor)
+        $pf1 = $this->makeTutorUser('Dra. Márcia Guambe', 'marcia.guambe@vodacom.co.mz');
+        Tutor::firstOrCreate(
+            ['email' => 'marcia.guambe@vodacom.co.mz'],
+            [
+                'user_id'        => $pf1->id,
+                'institution_id' => $vodacom->id,
+                'name'           => 'Dra. Márcia Guambe',
+                'position'       => 'Ponto Focal',
+            ]
+        );
+
+        // Tutor adicional
+        $tutor1 = $this->makeTutorUser('Eng. Rui Mondlane', 'tutor@vodacom.co.mz');
         Tutor::firstOrCreate(
             ['email' => 'tutor@vodacom.co.mz'],
             [
-                'institution_id' => $inst->id,
+                'user_id'        => $tutor1->id,
+                'institution_id' => $vodacom->id,
                 'name'           => 'Eng. Rui Mondlane',
                 'phone'          => '+258 84 111 2222',
                 'position'       => 'Gestor de Tecnologias de Informação',
-                'access_token'   => Str::random(60),
             ]
         );
 
-        PartnerInstitution::firstOrCreate(
-            ['name' => 'mCel Moçambique'],
+        // 2 – EMOSE (pendente)
+        $emose = PartnerInstitution::firstOrCreate(
+            ['name' => 'EMOSE – Empresa Moçambicana de Seguros'],
             [
-                'address' => 'Rua da Resistência, 1417, Maputo',
-                'phone'   => '+258 21 481 000',
-                'email'   => 'rh@mcel.co.mz',
+                'address'             => 'Rua da Sé, 100, Maputo',
+                'phone'               => '+258 21 300 400',
+                'email'               => 'contacto@emose.co.mz',
+                'nuit'                => '400654321',
+                'ponto_focal_nome'     => 'Dr. Carlos Nhantumbo',
+                'ponto_focal_contacto' => 'carlos.nhantumbo@emose.co.mz',
+                'status'              => 'pendente',
+            ]
+        );
+
+        $pf2 = $this->makeTutorUser('Dr. Carlos Nhantumbo', 'carlos.nhantumbo@emose.co.mz');
+        Tutor::firstOrCreate(
+            ['email' => 'carlos.nhantumbo@emose.co.mz'],
+            [
+                'user_id'        => $pf2->id,
+                'institution_id' => $emose->id,
+                'name'           => 'Dr. Carlos Nhantumbo',
+                'position'       => 'Ponto Focal',
+            ]
+        );
+
+        $tutor2 = $this->makeTutorUser('Dra. Isabel Tivane', 'isabel.tivane@emose.co.mz');
+        Tutor::firstOrCreate(
+            ['email' => 'isabel.tivane@emose.co.mz'],
+            [
+                'user_id'        => $tutor2->id,
+                'institution_id' => $emose->id,
+                'name'           => 'Dra. Isabel Tivane',
+                'phone'          => '+258 84 567 8901',
+                'position'       => 'Directora de RH',
+            ]
+        );
+
+        // 3 – MCel (rejeitada)
+        PartnerInstitution::firstOrCreate(
+            ['name' => 'MCel Moçambique'],
+            [
+                'address'             => 'Av. da Marginal, 45, Maputo',
+                'phone'               => '+258 21 450 450',
+                'email'               => 'parcerias@mcel.co.mz',
+                'nuit'                => '400789012',
+                'ponto_focal_nome'     => 'Eng. Sérgio Matola',
+                'ponto_focal_contacto' => 'sergio.matola@mcel.co.mz',
+                'status'              => 'rejeitada',
+            ]
+        );
+
+        $pf3 = $this->makeTutorUser('Eng. Sérgio Matola', 'sergio.matola@mcel.co.mz');
+        Tutor::firstOrCreate(
+            ['email' => 'sergio.matola@mcel.co.mz'],
+            [
+                'user_id'        => $pf3->id,
+                'institution_id' => PartnerInstitution::where('name', 'MCel Moçambique')->first()->id,
+                'name'           => 'Eng. Sérgio Matola',
+                'position'       => 'Ponto Focal',
+            ]
+        );
+
+        // 4 – TVM (suspensa)
+        $tvm = PartnerInstitution::firstOrCreate(
+            ['name' => 'Televisão de Moçambique'],
+            [
+                'address'             => 'Rua da Rádio, 1000, Maputo',
+                'phone'               => '+258 21 430 700',
+                'email'               => 'tvm@tvm.co.mz',
+                'nuit'                => '400345678',
+                'ponto_focal_nome'     => 'Jornalista Ana Cumbe',
+                'ponto_focal_contacto' => 'ana.cumbe@tvm.co.mz',
+                'status'              => 'suspensa',
+            ]
+        );
+
+        $pf4 = $this->makeTutorUser('Jornalista Ana Cumbe', 'ana.cumbe@tvm.co.mz');
+        Tutor::firstOrCreate(
+            ['email' => 'ana.cumbe@tvm.co.mz'],
+            [
+                'user_id'        => $pf4->id,
+                'institution_id' => $tvm->id,
+                'name'           => 'Jornalista Ana Cumbe',
+                'position'       => 'Ponto Focal',
             ]
         );
     }
@@ -425,4 +528,10 @@ class DatabaseSeeder extends Seeder
 
         return $user;
     }
-};
+
+    // ── Método auxiliar para criar um utilizador com role 'tutor' ─
+    private function makeTutorUser(string $name, string $email): User
+    {
+        return $this->makeUser($name, $email, 'tutor');
+    }
+}

@@ -66,7 +66,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ╔════════════════════════════════════════════════════╗
     // ║  ADMINISTRAÇÃO TÉCNICA (RF-000) – só admin       ║
     // ╚════════════════════════════════════════════════════╝
-    Route::middleware('role:admin')->group(function () {
+    Route::middleware('role:admin,dept_head')->group(function () {
 
         // Utilizadores
         Route::get('/users',          [UserController::class, 'index']);

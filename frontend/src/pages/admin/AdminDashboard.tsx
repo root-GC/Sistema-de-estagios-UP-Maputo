@@ -52,7 +52,7 @@ interface Curso {
     name: string;
     code: string;
   };
-  active?: boolean;          // campo usado para activo/inactivo
+  active?: boolean;
 }
 
 interface Instituicao {
@@ -61,6 +61,9 @@ interface Instituicao {
   address?: string;
   phone?: string;
   email?: string;
+  nuit?: string;
+  ponto_focal_nome?: string;
+  ponto_focal_contacto?: string;
   status: 'pendente' | 'aprovada' | 'rejeitada' | 'suspensa';
 }
 
@@ -227,7 +230,7 @@ export default function AdminDashboard() {
       get<{ data: Faculdade[] }>('/faculties').then(r => setFaculdades(r.data || [])),
       get<{ data: Departamento[] }>('/departments').then(r => setDepartamentos(r.data || [])),
       get<{ data: Curso[] }>('/courses').then(r => setCursos(r.data || [])),
-      get<{ data: Instituicao[] }>('/institutions').then(r => setInstituicoes(r.data || [])),
+      get<{ data: Instituicao[] }>('/institutions').then(r => setInstituicoes(r.data || [])), // ← já espera data
       get<{ data: Notificacao[] }>('/notifications').then(r => setNotifications(r.data || [])),
       get<{ data: AuditLog[] }>('/audit-logs').then(r => setLogs(r.data || [])),
       get<{ data: ActiveSession[] }>('/active-sessions').then(r => setSessions(r.data || [])),
@@ -352,7 +355,7 @@ export default function AdminDashboard() {
   );
 }
 
-/* ─── Secções (agora com os campos correctos) ─── */
+/* ─── Secções ─── */
 
 function UsersSection({ users, onToggle, onCreate }: { users: User[]; onToggle: (u: User) => void; onCreate: () => void }) {
   return (
@@ -626,7 +629,7 @@ function SessionsSection({ sessions }: { sessions: ActiveSession[] }) {
   );
 }
 
-/* ─── Roteador de modais (inalterado, já compatível) ─── */
+/* ─── Roteador de modais ─── */
 function ModalRouter({
   type,
   data,
@@ -652,7 +655,7 @@ function ModalRouter({
   return null;
 }
 
-/* ─── Modais (mantidos; campos já usam os nomes correctos) ─── */
+/* ─── Modais ─── */
 function UserModal({ onClose, refresh, departamentos, cursos }: { onClose: () => void; refresh: () => void; departamentos: Departamento[]; cursos: Curso[] }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1062,8 +1065,8 @@ function InstituicaoModal({ onClose, refresh }: { onClose: () => void; refresh: 
               <input className="form-input" value={form.ponto_focal_nome} onChange={e => set('ponto_focal_nome', e.target.value)} placeholder="Nome do responsável" />
             </div>
             <div className="form-group">
-              <label className="form-label">Ponto Focal (Contacto)</label>
-              <input className="form-input" value={form.ponto_focal_contacto} onChange={e => set('ponto_focal_contacto', e.target.value)} placeholder="Contacto" />
+              <label className="form-label">Ponto Focal (Email)</label>
+              <input className="form-input" type="email" value={form.ponto_focal_contacto} onChange={e => set('ponto_focal_contacto', e.target.value)} placeholder="Email do responsável" />
             </div>
           </div>
           <div className="modal-buttons">

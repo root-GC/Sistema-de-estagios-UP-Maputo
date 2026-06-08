@@ -18,7 +18,7 @@ import { Notifications } from '../pages/common/Notifications';
 import AdminDashboard from '../pages/admin/AdminDashboard';
 
 // Coordenador
-import { CoordinatorDashboard } from '../pages/coordinator/CoordinatorDashboard';
+import  CoordinatorDashboard  from '../pages/coordinator/CoordinatorDashboard';
 import { InternshipList }       from '../pages/coordinator/InternshipList';
 import { AllocateForm }         from '../pages/coordinator/AllocateForm';
 import { GradeSheets }          from '../pages/coordinator/GradeSheets';
@@ -31,6 +31,10 @@ import { SupervisorDashboard } from '../pages/supervisor/SupervisorDashboard';
 import { StudentDashboard } from '../pages/student/StudentDashboard';
 import { Journals }         from '../pages/student/Journals';
 import { Portfolio }        from '../pages/student/Portfolio';
+
+//Chefe da repartição
+import ChefeDashboard from '../pages/chefe/ChefeDashboard';
+
 
 // ── Ecrã público de autenticação (já isolado) ────────────
 function AuthGate() {
@@ -47,6 +51,16 @@ export function AppRouter() {
 
   return (
     <Routes>
+      {/* ─── Páginas específicas de função (protegidas) ─── */}
+      <Route
+        path="/chefe"
+        element={
+          <ProtectedRoute roles={['dept_head']}>
+            <ChefeDashboard />
+          </ProtectedRoute>
+        }
+      />
+
       {/* ─── Páginas públicas de autenticação ─── */}
       <Route
         path="/login"
