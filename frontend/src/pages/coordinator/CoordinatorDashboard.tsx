@@ -17,7 +17,7 @@ interface Student {
 interface RequisicaoEstagio {
   id: number;
   student: Student;
-  empresas_pretendidas?: string[];   // nomes das empresas que o estudante indicou
+  empresas_pretendidas?: string[];
   status: 'pendente' | 'aprovada' | 'rejeitada';
   supervisor_id?: number | null;
   supervisor?: { id: number; name: string };
@@ -30,8 +30,10 @@ interface Supervisor {
   name: string;
   email: string;
   department?: { name: string };
+  department_id?: number;
   academic_rank?: string;
-  estagiarios_count?: number;   // número de alunos já atribuídos
+  estagiarios_count?: number;
+  status?: string;
 }
 
 interface Carta {
@@ -49,13 +51,18 @@ interface Avaliacao {
   estado: string;
 }
 
+interface Departamento {
+  id: number;
+  name: string;
+  code: string;
+}
+
 /* ─── Utilitários ─── */
 function initials(name?: string): string {
   if (!name) return '?';
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-/* ─── Componentes internos ─── */
 function Spinner() {
   return (
     <div className="loading" role="status" aria-label="A carregar">
@@ -92,41 +99,45 @@ export default function CoordinatorDashboard() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  // Abas
   type View = 'dashboard' | 'requisicoes' | 'supervisores' | 'cartas' | 'pauta' | 'sigeup';
   const [view, setView] = useState<View>('dashboard');
   const [search, setSearch] = useState('');
 
-  // Dados
   const [requisicoes, setRequisicoes] = useState<RequisicaoEstagio[]>([]);
   const [supervisores, setSupervisores] = useState<Supervisor[]>([]);
   const [cartas, setCartas] = useState<Carta[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
+  const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Modal de criação de supervisor
+  // Modal de supervisor (criação/edição)
   const [showSupModal, setShowSupModal] = useState(false);
+  const [editingSupervisor, setEditingSupervisor] = useState<Supervisor | null>(null);
   const [supForm, setSupForm] = useState({ name: '', email: '', academic_rank: '', department_id: '' });
   const [supSubmitting, setSupSubmitting] = useState(false);
   const [supError, setSupError] = useState('');
 
-  // Modal de alocação (aprovar + escolher supervisor)
+  // Modal de visualização (detalhes)
+  const [viewingSupervisor, setViewingSupervisor] = useState<Supervisor | null>(null);
+
   const [allocReq, setAllocReq] = useState<RequisicaoEstagio | null>(null);
   const [allocSupervisorId, setAllocSupervisorId] = useState<number | string>('');
 
-  // Fetch principal
+  // Carregar dados iniciais
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [reqRes, supRes] = await Promise.all([
+      const [reqRes, supRes, depRes] = await Promise.all([
         get<{ data: RequisicaoEstagio[] }>('/internships?status=pendente,aprovada'),
         get<{ data: Supervisor[] }>('/users?role=supervisor'),
+        get<{ data: Departamento[] }>('/departments').catch(() => ({ data: [] as Departamento[] })),
       ]);
       setRequisicoes(reqRes.data || []);
       setSupervisores(supRes.data || []);
+      setDepartamentos(depRes.data || []);
     } catch (err: any) {
       setError(err?.message || 'Erro ao carregar dados.');
     } finally {
@@ -134,7 +145,6 @@ export default function CoordinatorDashboard() {
     }
   }, []);
 
-  // Carrega cartas e avaliações quando a aba mudar
   useEffect(() => {
     if (view === 'cartas') {
       get<{ data: Carta[] }>('/credential-letters').then(r => setCartas(r.data || [])).catch(() => {});
@@ -151,7 +161,6 @@ export default function CoordinatorDashboard() {
     navigate('/login');
   };
 
-  // Aprovar / Rejeitar pedido
   const handleRejeitar = async (id: number) => {
     await patch(`/internships/${id}/status`, { status: 'rejeitada' });
     fetchData();
@@ -183,28 +192,59 @@ export default function CoordinatorDashboard() {
   };
 
   // Criar supervisor
-  const handleCreateSupervisor = async () => {
+  const openCreateSupervisor = () => {
+    setEditingSupervisor(null);
+    setSupForm({ name: '', email: '', academic_rank: '', department_id: '' });
+    setSupError('');
+    setShowSupModal(true);
+  };
+
+  // Editar supervisor
+  const openEditSupervisor = (sup: Supervisor) => {
+    setEditingSupervisor(sup);
+    setSupForm({
+      name: sup.name || '',
+      email: sup.email || '',
+      academic_rank: sup.academic_rank || '',
+      department_id: sup.department_id?.toString() || '',
+    });
+    setSupError('');
+    setShowSupModal(true);
+  };
+
+  // Ver supervisor (modal de detalhes)
+  const openViewSupervisor = (sup: Supervisor) => {
+    setViewingSupervisor(sup);
+  };
+
+  const handleSaveSupervisor = async () => {
     setSupSubmitting(true);
     setSupError('');
     try {
-      await post('/users', {
+      const payload = {
         name: supForm.name,
         email: supForm.email,
         role: 'supervisor',
         department_id: Number(supForm.department_id) || undefined,
         academic_rank: supForm.academic_rank,
-      });
+      };
+
+      if (editingSupervisor) {
+        await patch(`/users/${editingSupervisor.id}`, payload);
+      } else {
+        await post('/users', payload);
+      }
+
       setShowSupModal(false);
-      setSupForm({ name: '', email: '', academic_rank: '', department_id: '' });
+      setEditingSupervisor(null);
       fetchData();
     } catch (err: any) {
-      setSupError(err?.message || 'Erro ao criar supervisor.');
+      setSupError(err?.message || 'Erro ao guardar supervisor.');
     } finally {
       setSupSubmitting(false);
     }
   };
 
-  // Cartas
   const gerarCarta = async (internshipId: number) => {
     try {
       await post(`/internships/${internshipId}/credential`, {});
@@ -219,7 +259,6 @@ export default function CoordinatorDashboard() {
     window.open(`/storage/${carta.file_path}`, '_blank');
   };
 
-  // Pauta
   const exportarPauta = async () => {
     try {
       await post('/grade-sheets', {});
@@ -230,7 +269,6 @@ export default function CoordinatorDashboard() {
     }
   };
 
-  // SIGEUP
   const exportarSigeup = async () => {
     try {
       const res = await post<{ file_path: string }>('/grade-sheets/export', {});
@@ -240,7 +278,6 @@ export default function CoordinatorDashboard() {
     }
   };
 
-  // Filtros
   const reqFiltradas = requisicoes.filter(r =>
     r.student.name.toLowerCase().includes(search.toLowerCase()) ||
     r.student.student_number.includes(search)
@@ -291,7 +328,6 @@ export default function CoordinatorDashboard() {
         </div>
       </aside>
 
-      {/* Main */}
       <main className="main">
         <header className="header">
           <div className="header-left">
@@ -410,21 +446,35 @@ export default function CoordinatorDashboard() {
                   <div className="page-title">Supervisores</div>
                   <div className="page-subtitle">Máximo 5 estagiários por supervisor</div>
                 </div>
-                <button className="btn btn-primary" onClick={() => setShowSupModal(true)}>
+                <button className="btn btn-primary" onClick={openCreateSupervisor}>
                   <span className="material-symbols-outlined">person_add</span> Novo Supervisor
                 </button>
               </div>
               <div className="card">
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>Nome</th><th>Email</th><th>Rank</th><th>Estagiários</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Nome</th>
+                        <th>Email</th>
+                        <th>Departamento</th>
+                        <th>Rank</th>
+                        <th>Estagiários</th>
+                        <th className="text-right">Ações</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {supervisores.map(s => (
                         <tr key={s.id}>
                           <td>{s.name}</td>
                           <td>{s.email}</td>
+                          <td>{s.department?.name || '—'}</td>
                           <td>{s.academic_rank || '—'}</td>
                           <td>{s.estagiarios_count ?? 0} / 5</td>
+                          <td className="text-right">
+                            <button className="btn btn-sm btn-secondary" style={{ marginRight: 4 }} onClick={() => openViewSupervisor(s)}>Ver</button>
+                            <button className="btn btn-sm btn-secondary" onClick={() => openEditSupervisor(s)}>Editar</button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -548,30 +598,65 @@ export default function CoordinatorDashboard() {
         </div>
       )}
 
-      {/* ─── Modal: Novo Supervisor ─── */}
+      {/* ─── Modal: Criar / Editar Supervisor ─── */}
       {showSupModal && (
         <div className="modal-overlay" onClick={() => setShowSupModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
-            <h3>Novo Supervisor</h3>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <h3>{editingSupervisor ? 'Editar Supervisor' : 'Novo Supervisor'}</h3>
             {supError && <Alert>{supError}</Alert>}
-            <form onSubmit={(e: FormEvent) => { e.preventDefault(); handleCreateSupervisor(); }}>
+            <form onSubmit={(e: FormEvent) => { e.preventDefault(); handleSaveSupervisor(); }}>
               <div className="form-group">
-                <label className="form-label">Nome</label>
-                <input className="form-input" value={supForm.name} onChange={e => setSupForm(f => ({ ...f, name: e.target.value }))} required />
+                <label className="form-label">Nome Completo</label>
+                <input className="form-input" value={supForm.name} onChange={e => setSupForm(f => ({ ...f, name: e.target.value }))} required placeholder="Nome do supervisor" />
               </div>
               <div className="form-group">
                 <label className="form-label">Email</label>
-                <input className="form-input" type="email" value={supForm.email} onChange={e => setSupForm(f => ({ ...f, email: e.target.value }))} required />
+                <input className="form-input" type="email" value={supForm.email} onChange={e => setSupForm(f => ({ ...f, email: e.target.value }))} required placeholder="email@up.ac.mz" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Departamento</label>
+                <select className="form-select" value={supForm.department_id} onChange={e => setSupForm(f => ({ ...f, department_id: e.target.value }))} required>
+                  <option value="">Seleccionar departamento</option>
+                  {departamentos.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label">Rank Académico</label>
-                <input className="form-input" value={supForm.academic_rank} onChange={e => setSupForm(f => ({ ...f, academic_rank: e.target.value }))} />
+                <select className="form-select" value={supForm.academic_rank} onChange={e => setSupForm(f => ({ ...f, academic_rank: e.target.value }))} required>
+                  <option value="">Seleccionar rank</option>
+                  <option value="Docente">Docente</option>
+                  <option value="Assistente">Assistente</option>
+                </select>
               </div>
               <div className="modal-buttons">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowSupModal(false)}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={supSubmitting}>{supSubmitting ? 'A criar…' : 'Criar'}</button>
+                <button type="submit" className="btn btn-primary" disabled={supSubmitting}>
+                  {supSubmitting ? 'A guardar…' : (editingSupervisor ? 'Atualizar' : 'Criar Supervisor')}
+                </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal: Ver Supervisor (detalhes) ─── */}
+      {viewingSupervisor && (
+        <div className="modal-overlay" onClick={() => setViewingSupervisor(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h3>Detalhes do Supervisor</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+              <div><strong>Nome:</strong> {viewingSupervisor.name}</div>
+              <div><strong>Email:</strong> {viewingSupervisor.email}</div>
+              <div><strong>Departamento:</strong> {viewingSupervisor.department?.name || '—'}</div>
+              <div><strong>Rank Académico:</strong> {viewingSupervisor.academic_rank || '—'}</div>
+              <div><strong>Estagiários:</strong> {viewingSupervisor.estagiarios_count ?? 0} / 5</div>
+              <div><strong>Estado:</strong> <Badge status={viewingSupervisor.status || 'active'} /></div>
+            </div>
+            <div className="modal-buttons" style={{ marginTop: '20px' }}>
+              <button className="btn btn-secondary" onClick={() => setViewingSupervisor(null)}>Fechar</button>
+            </div>
           </div>
         </div>
       )}

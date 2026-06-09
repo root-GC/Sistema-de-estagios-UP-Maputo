@@ -537,7 +537,7 @@ export default function ChefeDashboard() {
               </div>
               <div className="form-group">
                 <label className="form-label">Endereço</label>
-                <input className="form-input" value={instForm.address} onChange={e => setInstForm(f => ({ ...f, address: e.target.value }))} placeholder="Morada" />
+                <input className="form-input" value={instForm.address} onChange={e => setInstForm(f => ({ ...f, address: e.target.value }))} placeholder="Local" />
               </div>
               <div className="form-row">
                 <div className="form-group">

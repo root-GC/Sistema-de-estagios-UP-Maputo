@@ -44,34 +44,73 @@ class UserController extends Controller
     // ─────────────────────────────────────────────────────────
     // GET /users
     // ─────────────────────────────────────────────────────────
-    public function index(Request $request): JsonResponse
-    {
-        $user  = $request->user();
-        $query = User::with('roles');
+public function index(Request $request): JsonResponse
+{
+    $user  = $request->user();
+    $query = User::with('roles', 'supervisorProfile.department');  // ← eager load do departamento
 
-        // Cada actor vê apenas os utilizadores que lhe são relevantes
-        if ($user->hasRole('admin')) {
-            // vê tudo
-        } elseif ($user->hasRole('dept_head')) {
-            // vê coordenadores e tutores
-            $query->whereHas('roles', fn($q) =>
-                $q->whereIn('name', ['coordinator', 'tutor'])
-            );
-        } elseif ($user->hasRole('coordinator')) {
-            // vê supervisores do seu departamento
-            $query->whereHas('roles', fn($q) => $q->where('name', 'supervisor'));
-        } else {
-            return response()->json(['data' => []]);
-        }
-
-        $query
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->when($request->role,   fn($q) =>
-                $q->whereHas('roles', fn($r) => $r->where('name', $request->role))
-            );
-
-        return response()->json($query->latest()->paginate(20));
+    // Filtros por papel
+    if ($user->hasRole('admin')) {
+        // vê tudo
+    } elseif ($user->hasRole('dept_head')) {
+        $query->whereHas('roles', fn($q) =>
+            $q->whereIn('name', ['coordinator', 'tutor'])
+        );
+    } elseif ($user->hasRole('coordinator')) {
+        $query->whereHas('roles', fn($q) => $q->where('name', 'supervisor'));
+    } else {
+        return response()->json(['data' => []]);
     }
+
+    $query
+        ->when($request->status, fn($q) => $q->where('status', $request->status))
+        ->when($request->role,   fn($q) =>
+            $q->whereHas('roles', fn($r) => $r->where('name', $request->role))
+        );
+
+    $users = $query->latest()->paginate(20);
+
+    // Adiciona o campo department e academic_rank a cada utilizador
+    $users->getCollection()->transform(function ($user) {
+        $userArray = $user->toArray();
+        $userArray['academic_rank'] = $user->supervisorProfile->academic_rank ?? null;
+        $userArray['department'] = $user->supervisorProfile->department ?? null;   // ← novo campo
+        return $userArray;
+    });
+
+    return response()->json($users);
+}
+    // public function index(Request $request): JsonResponse
+    // {
+    //     $user  = $request->user();
+    //     $query = User::with('roles');
+
+    //     // Cada actor vê apenas os utilizadores que lhe são relevantes
+    //     if ($user->hasRole('admin')) {
+    //         // vê tudo
+    //     } elseif ($user->hasRole('dept_head')) {
+    //         // vê coordenadores e tutores
+    //         $query->whereHas('roles', fn($q) =>
+    //             $q->whereIn('name', ['coordinator', 'tutor'])
+    //         );
+    //     } elseif ($user->hasRole('coordinator')) {
+    //         // vê supervisores do seu departamento
+    //         $query->whereHas('roles', fn($q) => $q->where('name', 'supervisor'));
+    //     } else {
+    //         return response()->json(['data' => []]);
+    //     }
+
+    //     $query
+    //         ->when($request->status, fn($q) => $q->where('status', $request->status))
+    //         ->when($request->role,   fn($q) =>
+    //             $q->whereHas('roles', fn($r) => $r->where('name', $request->role))
+    //         );
+
+    //     return response()->json($query->latest()->paginate(20));
+    // }
+
+
+
 
     // ─────────────────────────────────────────────────────────
     // POST /users  — criação com perfil associado

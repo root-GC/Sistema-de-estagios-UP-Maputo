@@ -19,10 +19,6 @@ import AdminDashboard from '../pages/admin/AdminDashboard';
 
 // Coordenador
 import  CoordinatorDashboard  from '../pages/coordinator/CoordinatorDashboard';
-import { InternshipList }       from '../pages/coordinator/InternshipList';
-import { AllocateForm }         from '../pages/coordinator/AllocateForm';
-import { GradeSheets }          from '../pages/coordinator/GradeSheets';
-import { Institutions }         from '../pages/coordinator/Institutions';
 
 // Supervisor
 import  SupervisorDashboard  from '../pages/supervisor/SupervisorDashboard';
@@ -110,38 +106,6 @@ export function AppRouter() {
         element={
           <ProtectedRoute roles={['coordinator']}>
             <CoordinatorDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/institutions"
-        element={
-          <ProtectedRoute roles={['dept_head', 'admin']}>
-            <Institutions />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/internships"
-        element={
-          <ProtectedRoute roles={['coordinator', 'admin', 'dept_head']}>
-            <InternshipList />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/allocate"
-        element={
-          <ProtectedRoute roles={['coordinator', 'admin']}>
-            <AllocateForm />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/gradesheets"
-        element={
-          <ProtectedRoute roles={['coordinator', 'admin']}>
-            <GradeSheets />
           </ProtectedRoute>
         }
       />

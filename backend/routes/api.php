@@ -72,8 +72,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/users/{user}', [UserController::class, 'update']);
     });
 
-    // ── Admin + Chefe de Repartição (gestão completa) ────
-    Route::middleware('role:admin,dept_head')->group(function () {
+    // ── Admin + Chefe de Repartição (gestão completa) + Coordernador(buscar utilizadores) ────
+    Route::middleware('role:admin,dept_head,coordinator')->group(function () {
         Route::get('/audit-logs',     [AuditLogController::class, 'index']);
 
         // Faculdades
