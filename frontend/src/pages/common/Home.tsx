@@ -11,6 +11,7 @@ export function Home() {
   if (hasRole('supervisor'))   return <Navigate to="/supervisor" replace />;
   if (hasRole('student'))      return <Navigate to="/student" replace />;
   if (hasRole('dept_head'))    return <Navigate to="/chefe" replace />;
+  if (hasRole('tutor'))        return <Navigate to="/tutor" replace />;
 
   // fallback
   return <Navigate to="/notifications" replace />;

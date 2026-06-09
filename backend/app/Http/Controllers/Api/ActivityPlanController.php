@@ -22,11 +22,16 @@ use App\Models\{
 // ============================================================
 class ActivityPlanController extends Controller
 {
-    public function index(Internship $internship): JsonResponse
-    {
-        return response()->json($internship->activityPlans);
-    }
- 
+    // public function index(Internship $internship): JsonResponse
+    // {
+    //     return response()->json($internship->activityPlans);
+    // }
+ // Em ActivityPlanController
+public function index(Internship $internship): JsonResponse
+{
+    $plans = $internship->activityPlans()->orderByDesc('created_at')->get();
+    return response()->json($plans);
+}
     public function store(Request $request, Internship $internship): JsonResponse
     {
         $data = $request->validate(['file_path' => 'nullable|string']);

@@ -39,4 +39,21 @@ class CredentialLetterController extends Controller
  
         return response()->json($letter, 201);
     }
+
+    public function index(): JsonResponse
+{
+    // Retorna todas as cartas emitidas, com os dados do estágio e estudante
+    $letters = CredentialLetter::with('internship.student.user')
+        ->orderByDesc('generated_at')
+        ->get()
+        ->map(fn($l) => [
+            'id'              => $l->id,
+            'internship_id'   => $l->internship_id,
+            'file_path'       => $l->file_path,
+            'generated_at'    => $l->generated_at,
+            'student_name'    => $l->internship->student->user->name ?? '—',
+        ]);
+
+    return response()->json(['data' => $letters]);
+}
 }

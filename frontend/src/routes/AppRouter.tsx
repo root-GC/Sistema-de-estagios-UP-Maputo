@@ -25,15 +25,16 @@ import { GradeSheets }          from '../pages/coordinator/GradeSheets';
 import { Institutions }         from '../pages/coordinator/Institutions';
 
 // Supervisor
-import { SupervisorDashboard } from '../pages/supervisor/SupervisorDashboard';
+import  SupervisorDashboard  from '../pages/supervisor/SupervisorDashboard';
 
 // Estudante
-import { StudentDashboard } from '../pages/student/StudentDashboard';
-import { Journals }         from '../pages/student/Journals';
-import { Portfolio }        from '../pages/student/Portfolio';
+import  StudentDashboard from '../pages/student/StudentDashboard';
+
 
 //Chefe da repartição
 import ChefeDashboard from '../pages/chefe/ChefeDashboard';
+// Tutor
+import TutorDashboard from '../pages/tutor/TutorDashboard';
 
 
 // ── Ecrã público de autenticação (já isolado) ────────────
@@ -164,23 +165,15 @@ export function AppRouter() {
           </ProtectedRoute>
         }
       />
+      {/* Tutor */}
       <Route
-        path="/journals"
+        path="/tutor"
         element={
-          <ProtectedRoute roles={['student']}>
-            <Journals />
+          <ProtectedRoute roles={['tutor']}>
+            <TutorDashboard />
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/portfolio"
-        element={
-          <ProtectedRoute roles={['student']}>
-            <Portfolio />
-          </ProtectedRoute>
-        }
-      />
-
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
     </Routes>

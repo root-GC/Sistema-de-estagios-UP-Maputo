@@ -119,4 +119,18 @@ class GradeSheetController extends Controller
             'filename' => $fileName,
         ]);
     }
+    public function exportLatestSigeup(): JsonResponse
+    {
+        // Encontra a pauta mais recente gerada pelo utilizador autenticado (ou geral)
+        $gradeSheet = GradeSheet::where('generated_by', auth()->id())
+            ->latest()
+            ->first();
+
+        if (!$gradeSheet) {
+            return response()->json(['message' => 'Nenhuma pauta encontrada.'], 404);
+        }
+
+        // Reutiliza a lógica de exportação
+        return $this->exportSigeup($gradeSheet);
+    }
 }

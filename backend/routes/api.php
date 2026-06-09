@@ -19,11 +19,9 @@ use App\Http\Controllers\Api\{
     DashboardController,
     NotificationController,
     AuditLogController,
-
-    // ─── NOVOS (cria estes controladores) ───
     FacultyController,
     DepartmentController,
-    CourseController,          // Admin CRUD de Cursos
+    CourseController,
     FunctionController,
     ActiveSessionController,
 };
@@ -50,12 +48,12 @@ Route::get('/public/courses', fn() =>
 // ═══════════════════════════════════════════════════════════
 Route::middleware('auth:sanctum')->group(function () {
 
-    // ─── Dados do próprio utilizador ─────────────────────
+    // ── Dados do próprio utilizador ─────────────────────
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me',      [AuthController::class, 'me']);
     Route::get('/dashboard',    [DashboardController::class, 'index']);
 
-    // ─── Notificações (genéricas) ───────────────────────
+    // ── Notificações (genéricas) ───────────────────────
     Route::prefix('notifications')->group(function () {
         Route::get('/',                      [NotificationController::class, 'index']);
         Route::get('/unread-count',          [NotificationController::class, 'unreadCount']);
@@ -64,17 +62,18 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ╔════════════════════════════════════════════════════╗
-    // ║  ADMINISTRAÇÃO TÉCNICA (RF-000) – só admin       ║
+    // ║  ADMIN + CHEFE REPARTIÇÃO + COORDENADOR            ║
+    // ║  (todos podem ver e criar utilizadores)            ║
     // ╚════════════════════════════════════════════════════╝
-    Route::middleware('role:admin,dept_head')->group(function () {
-
-        // Utilizadores
+    Route::middleware('role:admin,dept_head,coordinator')->group(function () {
         Route::get('/users',          [UserController::class, 'index']);
         Route::post('/users',         [UserController::class, 'store']);
         Route::get('/users/{user}',   [UserController::class, 'show']);
         Route::patch('/users/{user}', [UserController::class, 'update']);
+    });
 
-        // Logs de auditoria
+    // ── Admin + Chefe de Repartição (gestão completa) ────
+    Route::middleware('role:admin,dept_head')->group(function () {
         Route::get('/audit-logs',     [AuditLogController::class, 'index']);
 
         // Faculdades
@@ -91,11 +90,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/departments/{department}',    [DepartmentController::class, 'update']);
         Route::delete('/departments/{department}',   [DepartmentController::class, 'destroy']);
 
-        // Cursos (gestão completa)
+        // Cursos
         Route::get('/courses',              [CourseController::class, 'index']);
         Route::post('/courses',             [CourseController::class, 'store']);
         Route::get('/courses/{course}',     [CourseController::class, 'show']);
-        Route::patch('/courses/{course}',   [CourseController::class, 'update']);   // activar/desactivar
+        Route::patch('/courses/{course}',   [CourseController::class, 'update']);
         Route::delete('/courses/{course}',  [CourseController::class, 'destroy']);
 
         // Papéis (Roles)
@@ -105,11 +104,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/roles/{role}',    [FunctionController::class, 'update']);
         Route::delete('/roles/{role}',   [FunctionController::class, 'destroy']);
 
-        // Sessões Activas (tokens Sanctum)
+        // Sessões Activas
         Route::get('/active-sessions',   [ActiveSessionController::class, 'index']);
     });
 
-    // ── Chefe de Repartição + Admin ──────────────────────
+    // ── Chefe de Repartição + Admin (instituições) ───────
     Route::middleware('role:dept_head,admin')->group(function () {
         Route::get('/institutions',                        [PartnerInstitutionController::class, 'index']);
         Route::post('/institutions',                       [PartnerInstitutionController::class, 'store']);
@@ -121,13 +120,22 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Coordenador + Admin ──────────────────────────────
     Route::middleware('role:coordinator,admin')->group(function () {
+        // Alocação e status
         Route::post('/internships/allocate',                       [InternshipController::class, 'allocate']);
         Route::patch('/internships/{internship}/status',           [InternshipController::class, 'updateStatus']);
+
+        // Cartas credenciais
+        Route::get('/credential-letters',                          [CredentialLetterController::class, 'index']);          // ← NOVO: listar cartas emitidas
         Route::post('/internships/{internship}/credential',        [CredentialLetterController::class, 'generate']);
+
+        // Pautas
         Route::get('/grade-sheets',                                [GradeSheetController::class, 'index']);
         Route::post('/grade-sheets',                               [GradeSheetController::class, 'generate']);
         Route::get('/grade-sheets/{internshipGradeSheet}',         [GradeSheetController::class, 'show']);
         Route::post('/grade-sheets/{internshipGradeSheet}/export', [GradeSheetController::class, 'exportSigeup']);
+        Route::post('/grade-sheets/export',                        [GradeSheetController::class, 'exportLatestSigeup']);   // ← NOVO: exportar a última pauta
+
+        // Estudantes elegíveis
         Route::get('/students/eligible',                           [InternshipController::class, 'eligibleStudents']);
     });
 
@@ -151,6 +159,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/internships/{internship}/projects',           [InternshipProjectController::class, 'index']);
         Route::get('/internships/{internship}/portfolio',          [PortfolioController::class, 'status']);
         Route::get('/internships/{internship}/tutor-evaluation',   [TutorEvaluationController::class, 'show']);
+         Route::get('/internships/{internship}/development-plans',  [DevelopmentPlanController::class, 'index']);
     });
 
     // ── Estudante ────────────────────────────────────────
