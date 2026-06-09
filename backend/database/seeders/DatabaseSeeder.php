@@ -1,5 +1,4 @@
 <?php
-// database/seeders/DatabaseSeeder.php
 
 namespace Database\Seeders;
 
@@ -52,7 +51,6 @@ class DatabaseSeeder extends Seeder
         );
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedRoles(): void
     {
         $roles = [
@@ -68,34 +66,27 @@ class DatabaseSeeder extends Seeder
         }
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedPermissions(): void
     {
         $perms = [
-            // Sistema
             'system.manage'           => 'Gerir utilizadores e configuração do sistema',
             'audit.view'              => 'Consultar logs de auditoria',
-            // Chefe Repartição
             'institution.manage'      => 'RF-001: CRUD de Instituições Parceiras e Tutores',
-            // Coordenador
             'internship.allocate'     => 'RF-002: Alocar estagiários a supervisores',
             'requirement.verify'      => 'RF-004: Verificar pré-requisitos curriculares',
             'credential.generate'     => 'RF-003: Gerar cartas credenciais',
             'gradesheet.manage'       => 'RF-013: Gerar e visualizar pautas',
             'sigeup.export'           => 'RF-014: Exportar notas para SIGEUP',
             'course.view.all'         => 'Ver todos os estágios do curso',
-            // Supervisor
             'plan.review'             => 'RF-005/006: Aprovar/rejeitar PDI e plano de actividades',
             'journal.view'            => 'RF-007: Ver diários dos estagiários atribuídos',
             'report.review'           => 'RF-011: Rever relatório e portefólio',
             'evaluation.supervisor'   => 'RF-011: Registar avaliação do supervisor',
-            // Estudante
             'plan.submit'             => 'RF-005/006: Submeter PDI e plano de actividades',
             'journal.write'           => 'RF-007: Escrever diários reflexivos',
             'project.submit'          => 'RF-008: Submeter projectos',
             'portfolio.submit'        => 'RF-010: Submeter portefólio final',
             'credential.view.own'     => 'Ver as suas próprias cartas credenciais',
-            // Tutor
             'evaluation.tutor'        => 'RF-009: Submeter ficha de avaliação (10 critérios)',
             'activityplan.view'       => 'RF-019: Ver plano de actividades do estagiário',
         ];
@@ -105,7 +96,6 @@ class DatabaseSeeder extends Seeder
         }
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedRolePermissions(): void
     {
         $map = [
@@ -133,7 +123,6 @@ class DatabaseSeeder extends Seeder
         }
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedAcademic(): void
     {
         $faculty = Faculty::firstOrCreate(
@@ -146,7 +135,6 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Departamento de Informática', 'faculty_id' => $faculty->id]
         );
 
-        // Curso de 4 anos — requisito: concluir 3º ano
         Course::firstOrCreate(
             ['code' => 'LINF'],
             [
@@ -158,7 +146,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Curso de 5 anos — requisito: concluir 4º ano
         Course::firstOrCreate(
             ['code' => 'MENG'],
             [
@@ -171,11 +158,11 @@ class DatabaseSeeder extends Seeder
         );
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedUsers(): void
     {
         $dept   = Department::where('code', 'DINFO')->first();
         $linf   = Course::where('code', 'LINF')->first();
+        $meng   = Course::where('code', 'MENG')->first();
 
         // Admin
         $admin = $this->makeUser('Administrador Sistema', 'admin@up.ac.mz', 'admin');
@@ -185,9 +172,15 @@ class DatabaseSeeder extends Seeder
         $head = $this->makeUser('António Maputo', 'chefe@up.ac.mz', 'dept_head');
         DepartmentHead::firstOrCreate(['user_id' => $head->id], ['department_id' => $dept->id]);
 
-        // Coordenador
+        // Coordenador – agora sem course_id, associamos depois
         $coord = $this->makeUser('Maria Nhampule', 'coord@up.ac.mz', 'coordinator');
-        Coordinator::firstOrCreate(['user_id' => $coord->id], ['course_id' => $linf->id]);
+        $coordinator = Coordinator::create(['user_id' => $coord->id]);
+
+        // Atribuir os cursos ao coordenador
+        $linf->coordinator_id = $coordinator->id;
+        $linf->save();
+        $meng->coordinator_id = $coordinator->id;
+        $meng->save();
 
         // Supervisor 1
         $sup1 = $this->makeUser('Prof. Carlos Sitoe', 'sup1@up.ac.mz', 'supervisor');
@@ -203,21 +196,19 @@ class DatabaseSeeder extends Seeder
             ['department_id' => $dept->id, 'academic_rank' => 'Professora Associada']
         );
 
-        // Estudante 1 — ano 4, cumpre pré-requisitos (curso 4 anos)
+        // Estudantes
         $est1 = $this->makeUser('João Macuácua', 'est1@up.ac.mz', 'student');
         StudentProfile::firstOrCreate(
             ['student_number' => '2021001'],
             ['user_id' => $est1->id, 'course_id' => $linf->id, 'current_year' => 4]
         );
 
-        // Estudante 2 — ano 4, cumpre pré-requisitos
         $est2 = $this->makeUser('Ana Bila', 'est2@up.ac.mz', 'student');
         StudentProfile::firstOrCreate(
             ['student_number' => '2021002'],
             ['user_id' => $est2->id, 'course_id' => $linf->id, 'current_year' => 4]
         );
 
-        // Estudante 3 — ano 2, NÃO cumpre (bloqueado RF-004)
         $est3 = $this->makeUser('Pedro Zimba', 'est3@up.ac.mz', 'student');
         StudentProfile::firstOrCreate(
             ['student_number' => '2022003'],
@@ -225,7 +216,6 @@ class DatabaseSeeder extends Seeder
         );
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedInstitutions(): void
     {
         // 1 – Vodacom (aprovada)
@@ -242,7 +232,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Ponto focal (tutor)
         $pf1 = $this->makeTutorUser('Dra. Márcia Guambe', 'marcia.guambe@vodacom.co.mz');
         Tutor::firstOrCreate(
             ['email' => 'marcia.guambe@vodacom.co.mz'],
@@ -254,7 +243,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Tutor adicional
         $tutor1 = $this->makeTutorUser('Eng. Rui Mondlane', 'tutor@vodacom.co.mz');
         Tutor::firstOrCreate(
             ['email' => 'tutor@vodacom.co.mz'],
@@ -355,7 +343,6 @@ class DatabaseSeeder extends Seeder
         );
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedPeriods(): void
     {
         InternshipPeriod::firstOrCreate(
@@ -368,7 +355,6 @@ class DatabaseSeeder extends Seeder
         );
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedInternships(): void
     {
         $period  = InternshipPeriod::where('academic_year', '2024/2025')->first();
@@ -380,7 +366,6 @@ class DatabaseSeeder extends Seeder
         $est1 = StudentProfile::where('student_number', '2021001')->first();
         $est2 = StudentProfile::where('student_number', '2021002')->first();
 
-        // Estágio 1 — em progresso, com tutor e instituição
         $int1 = Internship::firstOrCreate(
             ['student_id' => $est1->id, 'period_id' => $period->id],
             [
@@ -400,7 +385,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Estágio 2 — só alocado, sem tutor ainda
         $int2 = Internship::firstOrCreate(
             ['student_id' => $est2->id, 'period_id' => $period->id],
             [
@@ -415,7 +399,6 @@ class DatabaseSeeder extends Seeder
             ['requirements_met' => true, 'verified_by' => $coord->id, 'verified_at' => now()]
         );
 
-        // Notificações de boas-vindas
         Notification::create([
             'user_id' => $est1->user->id,
             'title'   => 'Estágio alocado com sucesso',
@@ -428,7 +411,6 @@ class DatabaseSeeder extends Seeder
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────
     private function seedSampleArtifacts(): void
     {
         $est1    = StudentProfile::where('student_number', '2021001')->first();
@@ -437,7 +419,6 @@ class DatabaseSeeder extends Seeder
 
         if (!$int1) return;
 
-        // PDI submetido e aprovado
         DevelopmentPlan::firstOrCreate(
             ['internship_id' => $int1->id, 'title' => 'PDI 2024 — João Macuácua'],
             [
@@ -449,7 +430,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Plano de actividades aprovado
         ActivityPlan::firstOrCreate(
             ['internship_id' => $int1->id],
             [
@@ -461,7 +441,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Diários reflexivos
         $entries = [
             ['title' => 'Semana 1 — Integração', 'content' => 'Primeira semana na Vodacom. Conheci a equipa de TI e fui apresentado às ferramentas internas. Sentimento de entusiasmo e alguma ansiedade.'],
             ['title' => 'Semana 2 — Primeiro projecto', 'content' => 'Comecei a trabalhar num dashboard de monitorização de rede. Aprendi muito sobre protocolos de comunicação internos.'],
@@ -475,7 +454,6 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        // Avaliação do tutor (RF-009) — 10 critérios
         $tutorEval = TutorEvaluation::firstOrCreate(
             ['internship_id' => $int1->id],
             [
@@ -506,7 +484,6 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        // Notificação ao supervisor
         $sup = $int1->supervisor->user;
         Notification::create([
             'user_id' => $sup->id,
@@ -515,7 +492,6 @@ class DatabaseSeeder extends Seeder
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────
     private function makeUser(string $name, string $email, string $roleName): User
     {
         $user = User::firstOrCreate(
@@ -529,7 +505,6 @@ class DatabaseSeeder extends Seeder
         return $user;
     }
 
-    // ── Método auxiliar para criar um utilizador com role 'tutor' ─
     private function makeTutorUser(string $name, string $email): User
     {
         return $this->makeUser($name, $email, 'tutor');

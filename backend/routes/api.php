@@ -53,6 +53,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me',      [AuthController::class, 'me']);
     Route::get('/dashboard',    [DashboardController::class, 'index']);
 
+    // NOVA: Coordenador do curso do estudante
+    Route::get('/dashboard/coordinator', [DashboardController::class, 'coordinator']);
+
     // ── Notificações (genéricas) ───────────────────────
     Route::prefix('notifications')->group(function () {
         Route::get('/',                      [NotificationController::class, 'index']);
@@ -63,7 +66,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ╔════════════════════════════════════════════════════╗
     // ║  ADMIN + CHEFE REPARTIÇÃO + COORDENADOR            ║
-    // ║  (todos podem ver e criar utilizadores)            ║
     // ╚════════════════════════════════════════════════════╝
     Route::middleware('role:admin,dept_head,coordinator')->group(function () {
         Route::get('/users',          [UserController::class, 'index']);
@@ -72,7 +74,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/users/{user}', [UserController::class, 'update']);
     });
 
-    // ── Admin + Chefe de Repartição (gestão completa) + Coordernador(buscar utilizadores) ────
+    // ── Admin + Chefe de Repartição + Coordenador (gestão adicional) ────
     Route::middleware('role:admin,dept_head,coordinator')->group(function () {
         Route::get('/audit-logs',     [AuditLogController::class, 'index']);
 
@@ -109,23 +111,29 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ── Chefe de Repartição + Admin (instituições) ───────
-    Route::middleware('role:dept_head,admin')->group(function () {
-        Route::get('/institutions',                        [PartnerInstitutionController::class, 'index']);
-        Route::post('/institutions',                       [PartnerInstitutionController::class, 'store']);
-        Route::patch('/institutions/{partnerInstitution}', [PartnerInstitutionController::class, 'update']);
-        Route::get('/institutions/{institution}/tutors',   [PartnerInstitutionController::class, 'tutors']);
-        Route::post('/institutions/{institution}/tutors',  [PartnerInstitutionController::class, 'storeTutor']);
-        Route::patch('/tutors/{tutor}',                    [PartnerInstitutionController::class, 'updateTutor']);
-    });
+   // ── Chefe de Repartição + Admin (escrita de instituições) ──
+        Route::middleware('role:dept_head,admin')->group(function () {
+            Route::post('/institutions',                       [PartnerInstitutionController::class, 'store']);
+            Route::patch('/institutions/{partnerInstitution}', [PartnerInstitutionController::class, 'update']);
+            Route::post('/institutions/{institution}/tutors',  [PartnerInstitutionController::class, 'storeTutor']);
+            Route::patch('/tutors/{tutor}',                    [PartnerInstitutionController::class, 'updateTutor']);
+        });
+
+        // ── Leitura de instituições (admin, dept_head, coordinator) ──
+        Route::middleware('role:admin,dept_head,coordinator')->group(function () {
+            Route::get('/institutions',                        [PartnerInstitutionController::class, 'index']);
+            Route::get('/institutions/{institution}/tutors',   [PartnerInstitutionController::class, 'tutors']);
+        });
 
     // ── Coordenador + Admin ──────────────────────────────
     Route::middleware('role:coordinator,admin')->group(function () {
         // Alocação e status
         Route::post('/internships/allocate',                       [InternshipController::class, 'allocate']);
         Route::patch('/internships/{internship}/status',           [InternshipController::class, 'updateStatus']);
+        Route::patch('/internships/{internship}/approve',          [InternshipController::class, 'approve']);            // ← NOVA
 
         // Cartas credenciais
-        Route::get('/credential-letters',                          [CredentialLetterController::class, 'index']);          // ← NOVO: listar cartas emitidas
+        Route::get('/credential-letters',                          [CredentialLetterController::class, 'index']);
         Route::post('/internships/{internship}/credential',        [CredentialLetterController::class, 'generate']);
 
         // Pautas
@@ -133,7 +141,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/grade-sheets',                               [GradeSheetController::class, 'generate']);
         Route::get('/grade-sheets/{internshipGradeSheet}',         [GradeSheetController::class, 'show']);
         Route::post('/grade-sheets/{internshipGradeSheet}/export', [GradeSheetController::class, 'exportSigeup']);
-        Route::post('/grade-sheets/export',                        [GradeSheetController::class, 'exportLatestSigeup']);   // ← NOVO: exportar a última pauta
+        Route::post('/grade-sheets/export',                        [GradeSheetController::class, 'exportLatestSigeup']);
 
         // Estudantes elegíveis
         Route::get('/students/eligible',                           [InternshipController::class, 'eligibleStudents']);
@@ -159,11 +167,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/internships/{internship}/projects',           [InternshipProjectController::class, 'index']);
         Route::get('/internships/{internship}/portfolio',          [PortfolioController::class, 'status']);
         Route::get('/internships/{internship}/tutor-evaluation',   [TutorEvaluationController::class, 'show']);
-         Route::get('/internships/{internship}/development-plans',  [DevelopmentPlanController::class, 'index']);
+        Route::get('/internships/{internship}/development-plans',  [DevelopmentPlanController::class, 'index']);
     });
 
     // ── Estudante ────────────────────────────────────────
     Route::middleware('role:student')->group(function () {
+        Route::post('/internships/request',                         [InternshipController::class, 'requestInternship']); // ← NOVA
+
         Route::post('/internships/{internship}/development-plans',  [DevelopmentPlanController::class, 'store']);
         Route::post('/internships/{internship}/activity-plans',     [ActivityPlanController::class, 'store']);
         Route::post('/internships/{internship}/journals',           [ReflectiveJournalController::class, 'store']);

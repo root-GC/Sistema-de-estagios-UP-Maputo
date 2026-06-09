@@ -10,8 +10,11 @@ use Illuminate\Database\Eloquent\Model;
 // ============================================================
 class Internship extends \Illuminate\Database\Eloquent\Model
 {
+    protected $casts = [
+        'empresas_pretendidas' => 'array',
+    ];
     protected $fillable = [
-        'student_id','supervisor_id','tutor_id','institution_id','period_id','status',
+        'student_id','supervisor_id','tutor_id','institution_id','period_id','status','empresas_pretendidas',
     ];
  
     public function student()      { return $this->belongsTo(StudentProfile::class, 'student_id'); }

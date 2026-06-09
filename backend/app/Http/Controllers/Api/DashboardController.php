@@ -6,19 +6,16 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\{Request, JsonResponse};
 use App\Models\{
     User, Internship, StudentProfile, SupervisorProfile,
-    PartnerInstitution, AuditLog, InternshipPeriod,Tutor,
+    PartnerInstitution, AuditLog, InternshipPeriod, Tutor,
 };
 
 class DashboardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-
-   
         $user = $request->user()->load('roles');
 
-
-         if ($user->hasRole('tutor')) {
+        if ($user->hasRole('tutor')) {
             $tutor = Tutor::where('user_id', $user->id)->first();
             if (!$tutor) {
                 return response()->json(['internships' => []]);
@@ -30,9 +27,7 @@ class DashboardController extends Controller
             ->where('tutor_id', $tutor->id)
             ->get();
 
-            return response()->json([
-                'internships' => $internships,
-            ]);
+            return response()->json(['internships' => $internships]);
         }
 
         if ($user->hasRole('admin')) {
@@ -47,8 +42,9 @@ class DashboardController extends Controller
         }
 
         if ($user->hasRole('coordinator')) {
-            $courseId = $user->coordinator->course_id;
-            $base     = Internship::whereHas('student', fn($q) => $q->where('course_id', $courseId));
+            $courses = $user->coordinator->courses;           // coleção
+            $courseIds = $courses->pluck('id');
+            $base = Internship::whereHas('student', fn($q) => $q->whereIn('course_id', $courseIds));
 
             return response()->json([
                 'total'         => (clone $base)->count(),
@@ -64,12 +60,18 @@ class DashboardController extends Controller
 
         if ($user->hasRole('supervisor')) {
             $profile = $user->supervisorProfile;
+            $internships = $profile->internships()
+                ->with(['student.user','student.course','period','result','institution'])
+                ->get()
+                ->map(function ($internship) {
+                    $internship->nota_final = $internship->result->final_score ?? null;
+                    return $internship;
+                });
+
             return response()->json([
                 'active_count'    => $profile->activeCount(),
                 'can_accept_more' => $profile->canAcceptMore(),
-                'students'        => $profile->internships()
-                                       ->with(['student.user','student.course','period','result'])
-                                       ->get(),
+                'students'        => $internships,
             ]);
         }
 
@@ -93,5 +95,28 @@ class DashboardController extends Controller
         }
 
         return response()->json([]);
+    }
+
+    public function coordinator(Request $request): JsonResponse
+    {
+        $user    = $request->user();
+        $student = $user->studentProfile;
+
+        if (!$student) {
+            return response()->json(['message' => 'Perfil de estudante não encontrado.'], 404);
+        }
+
+        $coordinator = $student->course->coordinator;
+        if (!$coordinator) {
+            return response()->json(['message' => 'Coordenador não atribuído.'], 404);
+        }
+
+        return response()->json([
+            'data' => [
+                'id'    => $coordinator->id,
+                'name'  => $coordinator->user->name ?? '—',
+                'email' => $coordinator->user->email ?? '—',
+            ]
+        ]);
     }
 }

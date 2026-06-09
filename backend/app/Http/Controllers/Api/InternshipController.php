@@ -1,11 +1,9 @@
 <?php
 
 namespace App\Http\Controllers\Api;
- 
+
 use App\Http\Controllers\Controller;
 use Illuminate\Http\{Request, JsonResponse};
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use App\Models\{
     User, Role, Internship, StudentProfile, SupervisorProfile,
     Coordinator, PartnerInstitution, Tutor, InternshipPeriod,
@@ -14,43 +12,44 @@ use App\Models\{
     TutorEvaluationItem, SupervisorEvaluation, InternshipResult,
     InternshipGradeSheet, InternshipGradeSheetItem, SigeupExport,
     CredentialLetter, InternshipRequirement, AuditLog, Notification,
-    InternshipGradeSheet as GradeSheet,
 };
 
-// ============================================================
-// InternshipController  — Coordenador / multi-role
-// ============================================================
 class InternshipController extends Controller
 {
-    public function index(Request $request): JsonResponse
-    {
-        $user  = $request->user();
-        $query = Internship::with([
-            'student.user','student.course',
-            'supervisor.user','tutor.institution',
-            'institution','period','result',
-        ]);
- 
-        if ($user->hasRole('student')) {
-            $query->where('student_id', $user->studentProfile->id);
- 
-        } elseif ($user->hasRole('supervisor')) {
-            $query->where('supervisor_id', $user->supervisorProfile->id);
- 
-        } elseif ($user->hasRole('coordinator')) {
-            $courseId = $user->coordinator->course_id;
-            $query->whereHas('student', fn($q) => $q->where('course_id', $courseId));
+public function index(Request $request): JsonResponse
+{
+    $user  = $request->user();
+    $query = Internship::with([
+        'student.user','student.course',
+        'supervisor.user','tutor.institution',
+        'institution','period','result',
+    ]);
+
+    if ($user->hasRole('student')) {
+        $query->where('student_id', $user->studentProfile->id);
+    } elseif ($user->hasRole('supervisor')) {
+        $query->where('supervisor_id', $user->supervisorProfile->id);
+    } elseif ($user->hasRole('coordinator')) {
+        $courseIds = $user->coordinator->courses->pluck('id');
+        if ($courseIds->isEmpty()) {
+            return response()->json(['data' => []]);
         }
- 
-        $query->when($request->status, fn($q) => $q->where('status', $request->status));
- 
-        return response()->json($query->get());
+        $query->whereHas('student', fn($q) => $q->whereIn('course_id', $courseIds));
     }
- 
+
+    // Filtro de status: aceita string separada por vírgulas (ex: "pendente,aprovada")
+    if ($statusFilter = $request->status) {
+        $statuses = explode(',', $statusFilter);
+        $query->whereIn('status', $statuses);
+    }
+
+    return response()->json(['data' => $query->latest()->get()]);
+}
+
     public function show(Request $request, Internship $internship): JsonResponse
     {
         $this->authorizeAccess($request->user(), $internship);
- 
+
         return response()->json($internship->load([
             'student.user','student.course.department.faculty',
             'supervisor.user','tutor.institution',
@@ -63,8 +62,7 @@ class InternshipController extends Controller
             'tutorEvaluation.items','supervisorEvaluation','result',
         ]));
     }
- 
-    // RF-002 + RF-004: Alocar estagiário
+
     public function allocate(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -74,11 +72,10 @@ class InternshipController extends Controller
             'institution_id' => 'nullable|exists:partner_institutions,id',
             'tutor_id'       => 'nullable|exists:tutors,id',
         ]);
- 
+
         $student    = StudentProfile::findOrFail($data['student_id']);
         $supervisor = SupervisorProfile::findOrFail($data['supervisor_id']);
- 
-        // RF-004: pré-requisitos curriculares
+
         if (!$student->meetsInternshipRequirements()) {
             return response()->json([
                 'message' => sprintf(
@@ -88,22 +85,20 @@ class InternshipController extends Controller
                 ),
             ], 422);
         }
- 
-        // RF-002: limite de 5 estudantes por supervisor
+
         if (!$supervisor->canAcceptMore()) {
             return response()->json([
                 'message'       => 'Supervisor com limite máximo de 5 estudantes atingido.',
                 'active_count'  => $supervisor->activeCount(),
             ], 422);
         }
- 
-        // 1 estágio por período
+
         if (Internship::where('student_id', $student->id)->where('period_id', $data['period_id'])->exists()) {
             return response()->json(['message' => 'Estudante já tem estágio neste período.'], 422);
         }
- 
+
         $internship = Internship::create(array_merge($data, ['status' => 'allocated']));
- 
+
         InternshipRequirement::create([
             'internship_id'    => $internship->id,
             'requirements_met' => true,
@@ -111,33 +106,119 @@ class InternshipController extends Controller
             'verified_by'      => $request->user()->id,
             'verified_at'      => now(),
         ]);
- 
+
         Notification::create([
             'user_id' => $student->user->id,
             'title'   => 'Estágio Alocado',
             'message' => "Foi alocado ao supervisor {$supervisor->user->name}.",
         ]);
- 
+
         AuditLog::record('allocate_internship', 'Internship', $internship->id,
             "Alocou {$student->student_number} → Supervisor {$supervisor->user->name}");
- 
+
         return response()->json($internship->load(['student.user','supervisor.user']), 201);
     }
- 
+
     public function updateStatus(Request $request, Internship $internship): JsonResponse
     {
         $data = $request->validate([
-            'status' => 'required|in:allocated,in_progress,submitted,evaluated,completed',
+            'status' => 'required|in:pendente,aprovada,rejeitada,allocated,in_progress,submitted,evaluated,completed',
         ]);
         $internship->update($data);
         return response()->json($internship);
     }
- 
-    // helper de autorização de acesso ao estágio
+
+    public function requestInternship(Request $request): JsonResponse
+    {
+        $user    = $request->user();
+        $student = $user->studentProfile;
+
+        if (!$student) {
+            return response()->json(['message' => 'Perfil de estudante não encontrado.'], 404);
+        }
+
+        $data = $request->validate([
+            'empresas_pretendidas'   => 'required|array|min:1|max:5',
+            'empresas_pretendidas.*' => 'string|max:255',
+        ]);
+
+        $existente = Internship::where('student_id', $student->id)
+            ->where('status', 'pendente')
+            ->first();
+
+        if ($existente) {
+            return response()->json(['message' => 'Já possui uma requisição de estágio pendente.'], 422);
+        }
+
+        $period = InternshipPeriod::latest('id')->first();
+        if (!$period) {
+            return response()->json(['message' => 'Nenhum período de estágio disponível. Contacte o administrador.'], 422);
+        }
+
+        $internship = Internship::create([
+            'student_id'           => $student->id,
+            'period_id'            => $period->id,
+            'status'               => 'pendente',
+            'empresas_pretendidas' => $data['empresas_pretendidas'],
+        ]);
+
+        // Notificar o coordenador do curso (agora único)
+        $coordinator = $student->course->coordinator;
+        if ($coordinator?->user) {
+            Notification::create([
+                'user_id' => $coordinator->user->id,
+                'title'   => 'Nova Requisição de Estágio',
+                'message' => "{$user->name} ({$student->student_number}) solicitou estágio em: " . implode(', ', $data['empresas_pretendidas']),
+            ]);
+        }
+
+        AuditLog::record('request_internship', 'Internship', $internship->id,
+            "{$student->student_number} solicitou estágio.");
+
+        return response()->json($internship, 201);
+    }
+
+    public function approve(Request $request, Internship $internship): JsonResponse
+    {
+        $data = $request->validate([
+            'supervisor_id'  => 'nullable|exists:supervisor_profiles,id',
+            'institution_id' => 'nullable|exists:partner_institutions,id',
+            'tutor_id'       => 'nullable|exists:tutors,id',
+        ]);
+
+        $internship->update([
+            'status'         => 'aprovada',
+            'supervisor_id'  => $data['supervisor_id'] ?? $internship->supervisor_id,
+            'institution_id' => $data['institution_id'] ?? $internship->institution_id,
+            'tutor_id'       => $data['tutor_id'] ?? $internship->tutor_id,
+        ]);
+
+        if (!$internship->requirement) {
+            InternshipRequirement::create([
+                'internship_id'    => $internship->id,
+                'requirements_met' => true,
+                'observations'     => 'Verificado na aprovação.',
+                'verified_by'      => $request->user()->id,
+                'verified_at'      => now(),
+            ]);
+        }
+
+        Notification::create([
+            'user_id' => $internship->student->user->id,
+            'title'   => 'Estágio Aprovado',
+            'message' => 'A sua requisição de estágio foi aprovada.',
+        ]);
+
+        AuditLog::record('approve_internship', 'Internship', $internship->id,
+            "Requisição aprovada. Supervisor: {$internship->supervisor?->user?->name}, Instituição: {$internship->institution?->name}");
+
+        return response()->json($internship->load(['student.user','supervisor.user','tutor','institution']));
+    }
+
     private function authorizeAccess(User $user, Internship $internship): void
     {
         if ($user->hasRole('admin', 'coordinator', 'dept_head')) return;
- 
+
         if ($user->hasRole('student')) {
             abort_if($internship->student_id !== $user->studentProfile->id, 403);
         } elseif ($user->hasRole('supervisor')) {
@@ -145,4 +226,3 @@ class InternshipController extends Controller
         }
     }
 }
- 

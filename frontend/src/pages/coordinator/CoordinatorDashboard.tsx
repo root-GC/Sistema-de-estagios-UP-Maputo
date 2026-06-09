@@ -1,14 +1,14 @@
+// src/pages/coordinator/CoordinatorDashboard.tsx
 import { useEffect, useState, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { get, post, patch, del } from '../../api/api';
+import { get, post, patch } from '../../api/api';
 
 /* ─── Tipos ─── */
 interface Student {
   id: number;
-  name: string;
-  email?: string;
+  user: { name: string; email?: string };   // ← agora com user.name
   student_number: string;
   current_year: number;
   course?: { id: number; name: string; code: string };
@@ -29,6 +29,7 @@ interface Supervisor {
   id: number;
   name: string;
   email: string;
+  supervisor_profile_id?: number;
   department?: { name: string };
   department_id?: number;
   academic_rank?: string;
@@ -41,7 +42,7 @@ interface Carta {
   internship_id: number;
   file_path: string;
   generated_at: string;
-  student_name?: string;
+  student_name?: string;          // nome do estudante devolvido pelo backend
 }
 
 interface Avaliacao {
@@ -55,6 +56,27 @@ interface Departamento {
   id: number;
   name: string;
   code: string;
+}
+
+interface Institution {
+  id: number;
+  name: string;
+  tutors: Tutor[];
+}
+
+interface Tutor {
+  id: number;
+  name: string;
+  email: string;
+  position?: string;
+}
+
+interface Notificacao {
+  id: number;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 /* ─── Utilitários ─── */
@@ -99,7 +121,7 @@ export default function CoordinatorDashboard() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  type View = 'dashboard' | 'requisicoes' | 'supervisores' | 'cartas' | 'pauta' | 'sigeup';
+  type View = 'dashboard' | 'requisicoes' | 'supervisores' | 'cartas' | 'pauta' | 'sigeup' | 'notificacoes';
   const [view, setView] = useState<View>('dashboard');
   const [search, setSearch] = useState('');
 
@@ -108,6 +130,8 @@ export default function CoordinatorDashboard() {
   const [cartas, setCartas] = useState<Carta[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
+  const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [notifications, setNotifications] = useState<Notificacao[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,28 +146,58 @@ export default function CoordinatorDashboard() {
   // Modal de visualização (detalhes)
   const [viewingSupervisor, setViewingSupervisor] = useState<Supervisor | null>(null);
 
+  // Modal de alocação (aprovar requisição)
   const [allocReq, setAllocReq] = useState<RequisicaoEstagio | null>(null);
   const [allocSupervisorId, setAllocSupervisorId] = useState<number | string>('');
+  const [allocInstitutionId, setAllocInstitutionId] = useState<number | string>('');
+  const [allocTutorId, setAllocTutorId] = useState<number | string>('');
 
-  // Carregar dados iniciais
+  // Modal de pré‑visualização da carta
+  const [cartaEstagio, setCartaEstagio] = useState<RequisicaoEstagio | null>(null);
+  const [gerandoCarta, setGerandoCarta] = useState(false);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  // Cursos do coordenador
+  const cursosNomes = user?.profile?.courses?.map((c: any) => c.name)?.join(', ') ?? '';
+  const cursoDisplay = cursosNomes ? `Coord. de ${cursosNomes}` : 'Coordenador de Curso';
+
+  // Carregar dados principais
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [reqRes, supRes, depRes] = await Promise.all([
+      const [reqRes, supRes, depRes, instRes] = await Promise.all([
         get<{ data: RequisicaoEstagio[] }>('/internships?status=pendente,aprovada'),
         get<{ data: Supervisor[] }>('/users?role=supervisor'),
         get<{ data: Departamento[] }>('/departments').catch(() => ({ data: [] as Departamento[] })),
+        get<{ data: Institution[] }>('/institutions').catch(() => ({ data: [] as Institution[] })),
       ]);
       setRequisicoes(reqRes.data || []);
       setSupervisores(supRes.data || []);
       setDepartamentos(depRes.data || []);
+      setInstitutions(instRes.data || []);
     } catch (err: any) {
       setError(err?.message || 'Erro ao carregar dados.');
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Carregar notificações
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await get<{ data: Notificacao[] }>('/notifications');
+      setNotifications(res.data || []);
+    } catch {
+      // silencioso
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    fetchNotifications();
+  }, [fetchData, fetchNotifications]);
 
   useEffect(() => {
     if (view === 'cartas') {
@@ -152,42 +206,43 @@ export default function CoordinatorDashboard() {
     if (view === 'pauta') {
       get<{ data: Avaliacao[] }>('/grade-sheets').then(r => setAvaliacoes(r.data || [])).catch(() => {});
     }
-  }, [view]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
+    if (view === 'notificacoes') {
+      fetchNotifications();
+    }
+  }, [view, fetchNotifications]);
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
 
+  // Rejeitar requisição
   const handleRejeitar = async (id: number) => {
     await patch(`/internships/${id}/status`, { status: 'rejeitada' });
     fetchData();
   };
 
+  // Abrir modal de aprovação com alocação
   const openAlocacao = (req: RequisicaoEstagio) => {
     setAllocReq(req);
     setAllocSupervisorId('');
+    setAllocInstitutionId('');
+    setAllocTutorId('');
   };
 
+  // Aprovar e alocar
   const handleAlocar = async () => {
-    if (!allocReq || !allocSupervisorId) return;
-    const sup = supervisores.find(s => s.id === Number(allocSupervisorId));
-    if (sup && (sup.estagiarios_count ?? 0) >= 5) {
-      alert('Este supervisor já atingiu o limite de 5 estudantes.');
-      return;
-    }
+    if (!allocReq) return;
     try {
-      await post('/internships/allocate', {
-        student_id: allocReq.student.id,
-        supervisor_id: Number(allocSupervisorId),
-        period_id: allocReq.period_id,
+      await patch(`/internships/${allocReq.id}/approve`, {
+        supervisor_id: allocSupervisorId ? Number(allocSupervisorId) : undefined,
+        institution_id: allocInstitutionId ? Number(allocInstitutionId) : undefined,
+        tutor_id: allocTutorId ? Number(allocTutorId) : undefined,
       });
       setAllocReq(null);
       fetchData();
     } catch (err: any) {
-      alert(err?.message || 'Erro ao alocar.');
+      alert(err?.message || 'Erro ao aprovar e alocar.');
     }
   };
 
@@ -245,19 +300,32 @@ export default function CoordinatorDashboard() {
     }
   };
 
-  const gerarCarta = async (internshipId: number) => {
+  // Abrir modal de pré‑visualização da carta
+  const abrirCartaModal = (req: RequisicaoEstagio) => {
+    setCartaEstagio(req);
+  };
+
+  // Gerar a carta (depois de confirmar no modal)
+  const gerarCartaConfirmada = async () => {
+    if (!cartaEstagio) return;
+    setGerandoCarta(true);
     try {
-      await post(`/internships/${internshipId}/credential`, {});
-      get<{ data: Carta[] }>('/credential-letters').then(r => setCartas(r.data || []));
+      await post(`/internships/${cartaEstagio.id}/credential`, {});
+      // Recarrega a lista de cartas emitidas
+      const res = await get<{ data: Carta[] }>('/credential-letters');
+      setCartas(res.data || []);
+      setCartaEstagio(null);
       alert('Carta gerada com sucesso.');
     } catch (err: any) {
       alert(err?.message || 'Erro ao gerar carta.');
+    } finally {
+      setGerandoCarta(false);
     }
   };
 
   const baixarCarta = (carta: Carta) => {
-    window.open(`/storage/${carta.file_path}`, '_blank');
-  };
+  window.open(carta.file_path, '_blank');
+};
 
   const exportarPauta = async () => {
     try {
@@ -278,9 +346,20 @@ export default function CoordinatorDashboard() {
     }
   };
 
+  // Marcar todas as notificações como lidas
+  const markAllNotificationsRead = async () => {
+    try {
+      await patch('/notifications/mark-all-read', {});
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao marcar notificações.');
+    }
+  };
+
+  // Filtro protegido contra campos undefined
   const reqFiltradas = requisicoes.filter(r =>
-    r.student.name.toLowerCase().includes(search.toLowerCase()) ||
-    r.student.student_number.includes(search)
+    (r.student?.user?.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
+    (r.student?.student_number ?? '').includes(search)
   );
 
   if (loading) return <Spinner />;
@@ -301,6 +380,7 @@ export default function CoordinatorDashboard() {
             ['cartas', 'description', 'Cartas'],
             ['pauta', 'grade', 'Pauta'],
             ['sigeup', 'upload', 'SIGEUP'],
+            ['notificacoes', 'notifications', 'Notificações'],
           ].map(([key, icon, label]) => (
             <div
               key={key}
@@ -319,7 +399,7 @@ export default function CoordinatorDashboard() {
             <div className="avatar">{initials(user?.name)}</div>
             <div className="user-info">
               <div className="user-name">{user?.name}</div>
-              <div className="user-role">Coordenador</div>
+              <div className="user-role">{cursoDisplay}</div>
             </div>
             <button className="btn btn-secondary btn-sm logout-btn" onClick={handleLogout} title="Sair">
               <span className="material-symbols-outlined">logout</span>
@@ -342,15 +422,18 @@ export default function CoordinatorDashboard() {
             </div>
           </div>
           <div className="header-right">
-            <button className="notification-btn">
+            <button className="notification-btn" onClick={() => setView('notificacoes')}>
               <span className="material-symbols-outlined">notifications</span>
+              {unreadCount > 0 && (
+                <span className="notification-badge">{unreadCount}</span>
+              )}
             </button>
             <div className="divider" />
             <div className="user-info" style={{ color: 'white', display: 'flex', alignItems: 'center', gap: 8 }}>
               <div className="avatar" style={{ width: 32, height: 32 }}>{initials(user?.name)}</div>
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>{user?.name}</div>
-                <div style={{ fontSize: 10, opacity: 0.8 }}>Coordenador de Curso</div>
+                <div style={{ fontSize: 10, opacity: 0.8 }}>{cursoDisplay}</div>
               </div>
             </div>
           </div>
@@ -412,7 +495,7 @@ export default function CoordinatorDashboard() {
                       ) : (
                         reqFiltradas.map(r => (
                           <tr key={r.id}>
-                            <td><div className="flex items-center gap-2"><div className="avatar" style={{ width: 28, height: 28, fontSize: 11 }}>{initials(r.student.name)}</div>{r.student.name}</div></td>
+                            <td><div className="flex items-center gap-2"><div className="avatar" style={{ width: 28, height: 28, fontSize: 11 }}>{initials(r.student.user?.name)}</div>{r.student.user?.name || '—'}</div></td>
                             <td>{r.student.student_number}</td>
                             <td>{r.empresas_pretendidas?.join(', ') || '—'}</td>
                             <td><Badge status={r.status} /></td>
@@ -497,13 +580,16 @@ export default function CoordinatorDashboard() {
                     <tbody>
                       {requisicoes.filter(r => r.status === 'aprovada').map(r => (
                         <tr key={r.id}>
-                          <td>{r.student.name}</td>
+                          <td>{r.student.user?.name || '—'}</td>
                           <td>—</td>
                           <td className="text-right">
-                            <button className="btn btn-sm btn-primary" onClick={() => gerarCarta(r.id)}>Gerar Carta</button>
+                            <button className="btn btn-sm btn-primary" onClick={() => abrirCartaModal(r)}>Gerar Carta</button>
                           </td>
                         </tr>
                       ))}
+                      {requisicoes.filter(r => r.status === 'aprovada').length === 0 && (
+                        <tr><td colSpan={3} className="text-center">Nenhum estágio aprovado.</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -513,7 +599,7 @@ export default function CoordinatorDashboard() {
                   <h3>Cartas Emitidas</h3>
                   <div className="card">
                     <table>
-                      <thead><tr><th>ID</th><th>Data</th><th className="text-right">Download</th></tr></thead>
+                      <thead><tr><th>Estudante</th><th>Data</th><th className="text-right">Download</th></tr></thead>
                       <tbody>
                         {cartas.map(c => (
                           <tr key={c.id}>
@@ -566,33 +652,124 @@ export default function CoordinatorDashboard() {
               <button className="btn btn-primary" onClick={exportarSigeup}>Exportar para SIGEUP</button>
             </div>
           )}
+
+          {/* ─── Notificações ─── */}
+          {view === 'notificacoes' && (
+            <div>
+              <div className="section-header">
+                <div>
+                  <div className="page-title">Notificações</div>
+                  <div className="page-subtitle">Comunicações do sistema</div>
+                </div>
+                {unreadCount > 0 && (
+                  <button className="btn btn-secondary" onClick={markAllNotificationsRead}>
+                    <span className="material-symbols-outlined">done_all</span> Marcar todas como lidas
+                  </button>
+                )}
+              </div>
+              <div className="card">
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Título</th>
+                        <th>Mensagem</th>
+                        <th>Data</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {notifications.length === 0 ? (
+                        <tr><td colSpan={4} className="text-center">Nenhuma notificação</td></tr>
+                      ) : (
+                        notifications.map(n => (
+                          <tr key={n.id} style={{ fontWeight: n.is_read ? 'normal' : 600 }}>
+                            <td>{n.title}</td>
+                            <td>{n.message}</td>
+                            <td>{new Date(n.created_at).toLocaleString('pt-PT')}</td>
+                            <td>{n.is_read ? '✅ Lida' : '🔵 Nova'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
-      {/* ─── Modal: Alocar Supervisor ─── */}
+      {/* ─── Modal: Alocar e Aprovar ─── */}
       {allocReq && (
         <div className="modal-overlay" onClick={() => setAllocReq(null)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
-            <h3>Alocar Supervisor</h3>
+            <h3>Aprovar Requisição e Alocar</h3>
             <p style={{ marginBottom: 16 }}>
-              <strong>{allocReq.student.name}</strong> — {allocReq.student.student_number}
+              <strong>{allocReq.student.user?.name || '—'}</strong> — {allocReq.student.student_number}
               <br />
-              Empresas: {allocReq.empresas_pretendidas?.join(', ') || 'Nenhuma'}
+              Empresas pretendidas: {allocReq.empresas_pretendidas?.join(', ') || 'Nenhuma'}
             </p>
             <div className="form-group">
               <label className="form-label">Supervisor</label>
               <select className="form-select" value={allocSupervisorId} onChange={e => setAllocSupervisorId(e.target.value)}>
                 <option value="">Selecionar</option>
                 {supervisores.map(s => (
-                  <option key={s.id} value={s.id} disabled={(s.estagiarios_count ?? 0) >= 5}>
+                  <option key={s.id} value={s.supervisor_profile_id} disabled={(s.estagiarios_count ?? 0) >= 5}>
                     {s.name} ({s.estagiarios_count ?? 0}/5)
                   </option>
                 ))}
               </select>
             </div>
+            <div className="form-group">
+              <label className="form-label">Instituição</label>
+              <select className="form-select" value={allocInstitutionId} onChange={e => { setAllocInstitutionId(e.target.value); setAllocTutorId(''); }}>
+                <option value="">Nenhuma</option>
+                {institutions.map(inst => (
+                  <option key={inst.id} value={inst.id}>{inst.name}</option>
+                ))}
+              </select>
+            </div>
+            {allocInstitutionId && (
+              <div className="form-group">
+                <label className="form-label">Tutor</label>
+                <select className="form-select" value={allocTutorId} onChange={e => setAllocTutorId(e.target.value)}>
+                  <option value="">Nenhum</option>
+                  {institutions.find(i => i.id === Number(allocInstitutionId))?.tutors.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} {t.position ? `(${t.position})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="modal-buttons">
               <button className="btn btn-secondary" onClick={() => setAllocReq(null)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={handleAlocar}>Confirmar Alocação</button>
+              <button className="btn btn-primary" onClick={handleAlocar}>Confirmar Aprovação</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal: Pré‑visualizar e Gerar Carta ─── */}
+      {cartaEstagio && (
+        <div className="modal-overlay" onClick={() => setCartaEstagio(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 550 }}>
+            <h3>Gerar Carta de Estágio</h3>
+            <p style={{ marginBottom: 16 }}>
+              Confirme os dados do estagiário e do estágio antes de gerar a carta.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div><strong>Estudante:</strong> {cartaEstagio.student.user?.name || '—'}</div>
+              <div><strong>Nº de estudante:</strong> {cartaEstagio.student.student_number}</div>
+              <div><strong>Curso:</strong> {cartaEstagio.student.course?.name || '—'}</div>
+              <div><strong>Empresas pretendidas:</strong> {cartaEstagio.empresas_pretendidas?.join(', ') || 'Nenhuma'}</div>
+              <div><strong>Período:</strong> {cartaEstagio.period?.name || cartaEstagio.period?.academic_year || '—'}</div>
+              <div><strong>Supervisor:</strong> {cartaEstagio.supervisor?.name || 'Não atribuído'}</div>
+            </div>
+            <div className="modal-buttons" style={{ marginTop: '20px' }}>
+              <button className="btn btn-secondary" onClick={() => setCartaEstagio(null)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={gerarCartaConfirmada} disabled={gerandoCarta}>
+                {gerandoCarta ? 'A gerar…' : 'Gerar Carta'}
+              </button>
             </div>
           </div>
         </div>

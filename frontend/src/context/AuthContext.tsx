@@ -10,6 +10,7 @@ export interface UserProfile {
   student_number?: string;
   current_year?: number;
   course?: { id: number; name: string; code: string; duration_years: number };
+  courses?: { id: number; name: string; code: string }[];  // ← NOVO (coordenador com múltiplos cursos)
   department?: { id: number; name: string };
 }
 
@@ -80,20 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
   };
 
-//   const register = async (payload: RegisterPayload) => {
-//     const data = await post<{ token: string; user: AuthUser }>(
-//       '/auth/register', payload
-//     );
-//     localStorage.setItem('token', data.token);
-//     setUser(data.user);
-//   };
-
   const register = async (payload: RegisterPayload) => {
-    await post('/auth/register', payload);       // a resposta { token, user } é ignorada
-    // Mensagem de sucesso (podes usar um toast/estado global em vez do alert)
+    await post('/auth/register', payload);
     alert('Conta criada com sucesso! Faça login para continuar.');
-    setAuthScreen('login');                      // redirecciona para o ecrã de login
-};
+    setAuthScreen('login');
+  };
 
   const logout = async () => {
     await post('/auth/logout', {}).catch(() => {});
@@ -115,7 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextType {
   const ctx = useContext(AuthCtx);
   if (!ctx) throw new Error('useAuth deve ser usado dentro de <AuthProvider>');

@@ -1,3 +1,4 @@
+// src/pages/student/StudentDashboard.tsx
 import { useEffect, useState, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -58,6 +59,12 @@ interface PortfolioStatus {
   is_complete: boolean;
 }
 
+interface CoordinatorInfo {
+  id: number;
+  name: string;
+  email: string;
+}
+
 const REQUIRED_DOCS = ['development_plan', 'activity_plan', 'journal', 'project', 'final_report'];
 
 /* ─── Utilitários ─── */
@@ -105,13 +112,16 @@ export default function StudentDashboard() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  type View = 'estagio' | 'planos' | 'diarios' | 'projetos' | 'portfolio';
+  type View = 'estagio' | 'solicitar' | 'planos' | 'diarios' | 'projetos' | 'portfolio';
   const [view, setView] = useState<View>('estagio');
 
   // Dados do estágio
   const [internship, setInternship] = useState<InternshipData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Coordenador do curso (para visualização)
+  const [coordinator, setCoordinator] = useState<CoordinatorInfo | null>(null);
 
   // Planos
   const [devPlans, setDevPlans] = useState<DevelopmentPlan[]>([]);
@@ -138,6 +148,11 @@ export default function StudentDashboard() {
   const [submittingPortfolio, setSubmittingPortfolio] = useState(false);
   const [portfolioMsg, setPortfolioMsg] = useState('');
 
+  // Solicitação de estágio
+  const [empresas, setEmpresas] = useState<string[]>(['', '', '', '', '']);
+  const [sendingRequest, setSendingRequest] = useState(false);
+  const [requestMsg, setRequestMsg] = useState('');
+
   // Carregar dados do dashboard
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -162,6 +177,9 @@ export default function StudentDashboard() {
       } else {
         setInternship(null);
       }
+      // Buscar coordenador do curso (para exibição na aba solicitar)
+      const coordRes = await get<{ data: CoordinatorInfo }>('/dashboard/coordinator').catch(() => null);
+      if (coordRes?.data) setCoordinator(coordRes.data);
     } catch (err: any) {
       setError(err?.message || 'Erro ao carregar dados.');
     } finally {
@@ -174,6 +192,37 @@ export default function StudentDashboard() {
   const handleLogout = async () => {
     await logout();
     navigate('/login');
+  };
+
+  // Atualizar array de empresas
+  const updateEmpresa = (index: number, value: string) => {
+    const newEmpresas = [...empresas];
+    newEmpresas[index] = value;
+    setEmpresas(newEmpresas);
+  };
+
+  // Enviar requisição de estágio
+  const submitInternshipRequest = async (e: FormEvent) => {
+    e.preventDefault();
+    const filled = empresas.filter(e => e.trim() !== '');
+    if (filled.length === 0) {
+      alert('Indique pelo menos uma empresa.');
+      return;
+    }
+    setSendingRequest(true);
+    setRequestMsg('');
+    try {
+      await post('/internships/request', {
+        empresas_pretendidas: filled,
+      });
+      setRequestMsg('Requisição enviada com sucesso! Aguarde a aprovação do coordenador.');
+      setEmpresas(['', '', '', '', '']);
+      fetchDashboard(); // recarregar para mostrar o estágio pendente
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao enviar requisição.');
+    } finally {
+      setSendingRequest(false);
+    }
   };
 
   // Submeter PDI
@@ -296,6 +345,7 @@ export default function StudentDashboard() {
         <nav className="nav">
           {[
             ['estagio', 'school', 'Meu Estágio'],
+            ['solicitar', 'send', 'Solicitar Estágio'],
             ['planos', 'assignment', 'Planos'],
             ['diarios', 'book', 'Diários'],
             ['projetos', 'emoji_objects', 'Projetos'],
@@ -358,7 +408,7 @@ export default function StudentDashboard() {
             <>
               {!internship ? (
                 <div style={{ textAlign: 'center', padding: 40 }}>
-                  <Alert type="info">Ainda não tem estágio atribuído. Aguarde a alocação pelo coordenador.</Alert>
+                  <Alert type="info">Ainda não tem estágio atribuído. Vá à aba "Solicitar Estágio" para fazer o seu pedido.</Alert>
                 </div>
               ) : (
                 <>
@@ -399,6 +449,43 @@ export default function StudentDashboard() {
                 </>
               )}
             </>
+          )}
+
+          {/* ─── Solicitar Estágio ─── */}
+          {view === 'solicitar' && (
+            <div>
+              <div className="page-title">Solicitar Estágio</div>
+              <div className="page-subtitle">Indique até 5 empresas onde gostaria de estagiar</div>
+
+              {coordinator && (
+                <div className="card mb-4" style={{ maxWidth: 400 }}>
+                  <div className="card-title">Coordenador do Curso</div>
+                  <div>{coordinator.name}</div>
+                  <div style={{ fontSize: 13, color: 'var(--muted)' }}>{coordinator.email}</div>
+                </div>
+              )}
+
+              {requestMsg && <Alert type="success">{requestMsg}</Alert>}
+
+              <div className="card" style={{ maxWidth: 500 }}>
+                <form onSubmit={submitInternshipRequest}>
+                  {empresas.map((emp, idx) => (
+                    <div className="form-group" key={idx}>
+                      <label className="form-label">Empresa {idx + 1}</label>
+                      <input
+                        className="form-input"
+                        value={emp}
+                        onChange={e => updateEmpresa(idx, e.target.value)}
+                        placeholder="Nome da empresa"
+                      />
+                    </div>
+                  ))}
+                  <button className="btn btn-primary" disabled={sendingRequest}>
+                    {sendingRequest ? 'A enviar…' : 'Enviar Requisição'}
+                  </button>
+                </form>
+              </div>
+            </div>
           )}
 
           {/* ─── Planos (PDI + Plano de Actividades) ─── */}
@@ -598,7 +685,7 @@ export default function StudentDashboard() {
             </div>
           )}
 
-          {!internship && view !== 'estagio' && (
+          {!internship && view !== 'estagio' && view !== 'solicitar' && (
             <div style={{ textAlign: 'center', padding: 40 }}>
               <Alert type="info">Sem estágio atribuído. Não é possível aceder a esta secção.</Alert>
             </div>

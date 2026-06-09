@@ -1,5 +1,4 @@
 <?php
-// app/Http/Controllers/Api/AuthController.php
 
 namespace App\Http\Controllers\Api;
 
@@ -108,7 +107,6 @@ class AuthController extends Controller
     {
         $request->validate(['email' => 'required|email']);
 
-        // Sempre responde OK (não revelar se email existe)
         $status = Password::sendResetLink($request->only('email'));
 
         return response()->json([
@@ -131,7 +129,7 @@ class AuthController extends Controller
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
                 $user->forceFill(['password' => Hash::make($password)])->save();
-                $user->tokens()->delete(); // invalida todos os tokens activos
+                $user->tokens()->delete();
 
                 AuditLog::record('password_reset', 'User', $user->id,
                     "Password redefinida via link: {$user->email}", $user->id);
@@ -167,7 +165,9 @@ class AuthController extends Controller
         } elseif ($user->hasRole('supervisor') && $sp = $user->supervisorProfile) {
             $data['profile'] = $sp->load('department.faculty');
         } elseif ($user->hasRole('coordinator') && $c = $user->coordinator) {
-            $data['profile'] = $c->load('course.department');
+            // Carrega a lista de cursos do coordenador (novo)
+            $c->load('courses.department');
+            $data['profile'] = $c;
         } elseif ($user->hasRole('dept_head') && $dh = $user->departmentHead) {
             $data['profile'] = $dh->load('department.faculty');
         }
