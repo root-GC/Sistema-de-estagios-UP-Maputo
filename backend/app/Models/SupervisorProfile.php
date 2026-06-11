@@ -19,7 +19,7 @@ class SupervisorProfile extends \Illuminate\Database\Eloquent\Model
     // RF-002: limite de 5 estudantes activos
     public function activeCount(): int
     {
-        return $this->internships()->whereIn('status', ['allocated','in_progress'])->count();
+        return $this->internships()->whereIn('status', ['allocated','in_progress','aprovada'])->count();
     }
  
     public function canAcceptMore(): bool

@@ -128,55 +128,69 @@ public function index(Request $request): JsonResponse
         return response()->json($internship);
     }
 
-    public function requestInternship(Request $request): JsonResponse
-    {
-        $user    = $request->user();
-        $student = $user->studentProfile;
+   public function requestInternship(Request $request): JsonResponse
+{
+    $user    = $request->user();
+    $student = $user->studentProfile;
 
-        if (!$student) {
-            return response()->json(['message' => 'Perfil de estudante não encontrado.'], 404);
-        }
-
-        $data = $request->validate([
-            'empresas_pretendidas'   => 'required|array|min:1|max:5',
-            'empresas_pretendidas.*' => 'string|max:255',
-        ]);
-
-        $existente = Internship::where('student_id', $student->id)
-            ->where('status', 'pendente')
-            ->first();
-
-        if ($existente) {
-            return response()->json(['message' => 'Já possui uma requisição de estágio pendente.'], 422);
-        }
-
-        $period = InternshipPeriod::latest('id')->first();
-        if (!$period) {
-            return response()->json(['message' => 'Nenhum período de estágio disponível. Contacte o administrador.'], 422);
-        }
-
-        $internship = Internship::create([
-            'student_id'           => $student->id,
-            'period_id'            => $period->id,
-            'status'               => 'pendente',
-            'empresas_pretendidas' => $data['empresas_pretendidas'],
-        ]);
-
-        // Notificar o coordenador do curso (agora único)
-        $coordinator = $student->course->coordinator;
-        if ($coordinator?->user) {
-            Notification::create([
-                'user_id' => $coordinator->user->id,
-                'title'   => 'Nova Requisição de Estágio',
-                'message' => "{$user->name} ({$student->student_number}) solicitou estágio em: " . implode(', ', $data['empresas_pretendidas']),
-            ]);
-        }
-
-        AuditLog::record('request_internship', 'Internship', $internship->id,
-            "{$student->student_number} solicitou estágio.");
-
-        return response()->json($internship, 201);
+    if (!$student) {
+        return response()->json(['message' => 'Perfil de estudante não encontrado.'], 404);
     }
+
+    $data = $request->validate([
+        'empresas_pretendidas'   => 'required|array|min:1|max:5',
+        'empresas_pretendidas.*' => 'string|max:255',
+        // Dados pessoais opcionais
+        'bi_numero'              => 'nullable|string|max:30',
+        'bi_data_emissao'        => 'nullable|date',
+        'pai_nome'               => 'nullable|string|max:255',
+        'mae_nome'               => 'nullable|string|max:255',
+    ]);
+
+    // Atualiza o perfil do estudante com os dados fornecidos
+    $student->update(array_filter([
+        'bi_numero'       => $data['bi_numero'] ?? $student->bi_numero,
+        'bi_data_emissao' => $data['bi_data_emissao'] ?? $student->bi_data_emissao,
+        'pai_nome'        => $data['pai_nome'] ?? $student->pai_nome,
+        'mae_nome'        => $data['mae_nome'] ?? $student->mae_nome,
+    ]));
+
+    // Resto do código (existente)
+    $existente = Internship::where('student_id', $student->id)
+        ->where('status', 'pendente')
+        ->first();
+
+    if ($existente) {
+        return response()->json(['message' => 'Já possui uma requisição de estágio pendente.'], 422);
+    }
+
+    $period = InternshipPeriod::latest('id')->first();
+    if (!$period) {
+        return response()->json(['message' => 'Nenhum período de estágio disponível. Contacte o administrador.'], 422);
+    }
+
+    $internship = Internship::create([
+        'student_id'           => $student->id,
+        'period_id'            => $period->id,
+        'status'               => 'pendente',
+        'empresas_pretendidas' => $data['empresas_pretendidas'],
+    ]);
+
+    // Notificar o coordenador
+    $coordinator = $student->course->coordinator;
+    if ($coordinator?->user) {
+        Notification::create([
+            'user_id' => $coordinator->user->id,
+            'title'   => 'Nova Requisição de Estágio',
+            'message' => "{$user->name} ({$student->student_number}) solicitou estágio em: " . implode(', ', $data['empresas_pretendidas']),
+        ]);
+    }
+
+    AuditLog::record('request_internship', 'Internship', $internship->id,
+        "{$student->student_number} solicitou estágio.");
+
+    return response()->json($internship, 201);
+}
 
     public function approve(Request $request, Internship $internship): JsonResponse
     {

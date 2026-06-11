@@ -24,11 +24,12 @@ use App\Http\Controllers\Api\{
     CourseController,
     FunctionController,
     ActiveSessionController,
+    FinalReportController
 };
 
 // ═══════════════════════════════════════════════════════════
 //  PÚBLICAS
-// ═══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 Route::post('/auth/register',        [AuthController::class, 'register']);
 Route::post('/auth/login',           [AuthController::class, 'login']);
 Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
@@ -180,6 +181,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/internships/{internship}/projects',           [InternshipProjectController::class, 'store']);
         Route::post('/internships/{internship}/portfolio/document', [PortfolioController::class, 'addDocument']);
         Route::post('/internships/{internship}/portfolio/submit',   [PortfolioController::class, 'submit']);
+        Route::post('/internships/{internship}/final-report', [FinalReportController::class, 'store']);
     });
 
     // ── Tutor ────────────────────────────────────────────

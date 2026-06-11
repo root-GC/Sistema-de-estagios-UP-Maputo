@@ -1,7 +1,8 @@
+// src/pages/supervisor/SupervisorDashboard.tsx
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { get, post, patch } from '../../api/api';
+import { get, post, patch, storageUrl } from '../../api/api';
 
 /* ─── Tipos ─── */
 interface Estagio {
@@ -15,18 +16,19 @@ interface Estagio {
   institution?: { name: string };
   status: string;
   nota_final?: number | null;
-  // documentos pendentes (iremos calcular a partir dos planos)
 }
 
 interface DevelopmentPlan {
   id: number;
   title: string;
+  file_url?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   submitted_at?: string;
 }
 
 interface ActivityPlan {
   id: number;
+  file_url?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   submitted_at?: string;
 }
@@ -36,6 +38,16 @@ interface Journal {
   title: string;
   content: string;
   created_at: string;
+}
+
+interface PortfolioStatus {
+  portfolio?: {
+    id: number;
+    status: string;
+    documents: { id: number; document_type: string; file_url?: string | null }[];
+  };
+  missing_documents: string[];
+  is_complete: boolean;
 }
 
 /* ─── Utilitários ─── */
@@ -83,15 +95,13 @@ export default function SupervisorDashboard() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
-  type View = 'dashboard' | 'planos' | 'diarios' | 'avaliacao';
+  type View = 'dashboard' | 'planos' | 'diarios' | 'portfolio' | 'avaliacao';
   const [view, setView] = useState<View>('dashboard');
 
-  // Estados
   const [estagios, setEstagios] = useState<Estagio[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Estagiário selecionado
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedName, setSelectedName] = useState('');
 
@@ -107,18 +117,19 @@ export default function SupervisorDashboard() {
   const [journals, setJournals] = useState<Journal[]>([]);
   const [selectedJournal, setSelectedJournal] = useState<Journal | null>(null);
 
+  // Portfólio
+  const [portfolio, setPortfolio] = useState<PortfolioStatus | null>(null);
+
   // Avaliação
   const [nota, setNota] = useState('');
   const [obs, setObs] = useState('');
   const [salvandoNota, setSalvandoNota] = useState(false);
   const [notaSalva, setNotaSalva] = useState(false);
 
-  // Carregar estágios do supervisor
   const fetchEstagios = async () => {
     setLoading(true);
     setError('');
     try {
-      // O endpoint /dashboard já retorna os estágios do supervisor autenticado
       const res = await get<{ students: Estagio[] }>('/dashboard');
       setEstagios(res.students || []);
     } catch (err: any) {
@@ -130,28 +141,27 @@ export default function SupervisorDashboard() {
 
   useEffect(() => { fetchEstagios(); }, []);
 
-  // Ao selecionar um estágio, carregar planos e diários
+  // Ao selecionar um estágio, carregar planos, diários e portfólio
   useEffect(() => {
     if (!selectedId) return;
-    // Planos de desenvolvimento
     get<DevelopmentPlan[]>(`/internships/${selectedId}/development-plans`)
       .then(setDevPlans)
       .catch(() => setDevPlans([]));
-    // Planos de actividade
     get<ActivityPlan[]>(`/internships/${selectedId}/activity-plans`)
       .then(setActPlans)
       .catch(() => setActPlans([]));
-    // Diários
     get<Journal[]>(`/internships/${selectedId}/journals`)
       .then(setJournals)
       .catch(() => setJournals([]));
-    // Reset da avaliação
+    // Portfólio (carrega sempre que o estágio muda)
+    get<PortfolioStatus>(`/internships/${selectedId}/portfolio`)
+      .then(setPortfolio)
+      .catch(() => setPortfolio(null));
     setNota('');
     setObs('');
     setNotaSalva(false);
   }, [selectedId]);
 
-  // Handlers
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -160,10 +170,9 @@ export default function SupervisorDashboard() {
   const selecionarEstagiario = (id: number, nome: string) => {
     setSelectedId(id);
     setSelectedName(nome);
-    setView('planos'); // vai para a aba de planos automaticamente
+    setView('planos');
   };
 
-  // Aprovar / Rejeitar plano
   const abrirRevisao = (id: number, tipo: 'dev' | 'act') => {
     setReviewingId(id);
     setReviewType(tipo);
@@ -178,7 +187,6 @@ export default function SupervisorDashboard() {
         ? `/development-plans/${reviewingId}/review`
         : `/activity-plans/${reviewingId}/review`;
       await patch(endpoint, { status, comment: reviewComment });
-      // recarregar
       if (reviewType === 'dev') {
         const p = await get<DevelopmentPlan[]>(`/internships/${selectedId}/development-plans`);
         setDevPlans(p);
@@ -194,7 +202,6 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // Submeter avaliação
   const handleSubmeterAvaliacao = async () => {
     if (!selectedId || !nota) return;
     setSalvandoNota(true);
@@ -205,7 +212,7 @@ export default function SupervisorDashboard() {
       });
       setNotaSalva(true);
       alert('Avaliação registada com sucesso!');
-      fetchEstagios(); // atualiza lista
+      fetchEstagios();
     } catch (err: any) {
       alert(err?.message || 'Erro ao registar avaliação.');
     } finally {
@@ -213,7 +220,6 @@ export default function SupervisorDashboard() {
     }
   };
 
-  // Estatísticas
   const pendentes = estagios.filter(e => e.status === 'in_progress').length;
   const notasLancadas = estagios.filter(e => e.nota_final != null).length;
 
@@ -232,6 +238,7 @@ export default function SupervisorDashboard() {
             ['dashboard', 'dashboard', 'Painel'],
             ['planos', 'assignment', 'Planos'],
             ['diarios', 'book', 'Diários'],
+            ['portfolio', 'folder', 'Portefólio'],
             ['avaliacao', 'grading', 'Avaliação'],
           ].map(([key, icon, label]) => (
             <div
@@ -390,6 +397,11 @@ export default function SupervisorDashboard() {
                           {p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('pt-PT') : '—'}
                         </div>
                         <Badge status={p.status} />
+                        {p.file_url && (
+                          <a href={storageUrl(p.file_url)} target="_blank" className="btn btn-sm btn-secondary" style={{ marginLeft: 8 }}>
+                            Download
+                          </a>
+                        )}
                       </div>
                       {p.status === 'pending' && (
                         <button className="btn btn-sm btn-success" onClick={() => abrirRevisao(p.id, 'dev')}>Revisar</button>
@@ -408,6 +420,11 @@ export default function SupervisorDashboard() {
                           {p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('pt-PT') : '—'}
                         </div>
                         <Badge status={p.status} />
+                        {p.file_url && (
+                          <a href={storageUrl(p.file_url)} target="_blank" className="btn btn-sm btn-secondary" style={{ marginLeft: 8 }}>
+                            Download
+                          </a>
+                        )}
                       </div>
                       {p.status === 'pending' && (
                         <button className="btn btn-sm btn-success" onClick={() => abrirRevisao(p.id, 'act')}>Revisar</button>
@@ -454,6 +471,53 @@ export default function SupervisorDashboard() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ─── Portefólio ─── */}
+          {view === 'portfolio' && selectedId && (
+            <div>
+              <div className="page-title">Portefólio de {selectedName}</div>
+              <div className="page-subtitle">Documentos submetidos pelo estudante</div>
+              {portfolio?.portfolio ? (
+                <div className="card">
+                  <div className="mb-4">
+                    <div className="stat-label">Estado</div>
+                    <Badge status={portfolio.portfolio.status || 'pending'} />
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Documento</th>
+                          <th className="text-right">Download</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {portfolio.portfolio.documents.map(doc => (
+                          <tr key={doc.id}>
+                            <td>{doc.document_type.replace(/_/g, ' ')}</td>
+                            <td className="text-right">
+                              {doc.file_url ? (
+                                <a href={storageUrl(doc.file_url)} target="_blank" className="btn btn-sm btn-secondary">Download</a>
+                              ) : (
+                                <span style={{ color: 'var(--muted)' }}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {portfolio.portfolio.documents.length === 0 && (
+                          <tr><td colSpan={2} className="text-center">Nenhum documento.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="card" style={{ textAlign: 'center', padding: 40 }}>
+                  <p style={{ color: 'var(--muted)' }}>Portefólio ainda não iniciado.</p>
+                </div>
+              )}
             </div>
           )}
 

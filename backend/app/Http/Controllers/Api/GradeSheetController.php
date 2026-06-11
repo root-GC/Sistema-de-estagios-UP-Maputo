@@ -22,6 +22,24 @@ use App\Models\{
 // ============================================================
 class GradeSheetController extends Controller
 {
+    public function index(): JsonResponse
+{
+    // Busca todas as avaliações que já têm nota final calculada
+    $resultados = InternshipResult::whereNotNull('final_score')
+        ->with('internship.student.user')
+        ->orderByDesc('calculated_at')
+        ->get()
+        ->map(function ($r) {
+            return [
+                'id'           => $r->id,
+                'student_name' => $r->internship->student->user->name ?? '—',
+                'nota'         => $r->final_score,
+                'estado'       => $r->approved ? 'Aprovado' : 'Reprovado',
+            ];
+        });
+
+    return response()->json(['data' => $resultados]);
+}
     // RF-013: Gerar pauta
     public function generate(Request $request): JsonResponse
     {
@@ -60,7 +78,7 @@ class GradeSheetController extends Controller
         ]), 201);
     }
  
-    public function index(): JsonResponse
+    public function indexPauta(): JsonResponse
     {
         return response()->json(GradeSheet::with(['course','period','generatedBy'])->latest('generated_at')->get());
     }

@@ -17,44 +17,54 @@ class UserController extends Controller
     // ─────────────────────────────────────────────────────────
     // GET /users
     // ─────────────────────────────────────────────────────────
-    public function index(Request $request): JsonResponse
-    {
-        $user  = $request->user();
-        $query = User::with('roles', 'supervisorProfile.department');
+   public function index(Request $request): JsonResponse
+{
+    $user  = $request->user();
+    $query = User::with('roles', 'supervisorProfile.department');
 
-        if ($user->hasRole('admin')) {
-            // vê tudo
-        } elseif ($user->hasRole('dept_head')) {
-            $query->whereHas('roles', fn($q) =>
-                $q->whereIn('name', ['coordinator', 'tutor'])
-            );
-        } elseif ($user->hasRole('coordinator')) {
-            $query->whereHas('roles', fn($q) => $q->where('name', 'supervisor'));
+    if ($user->hasRole('admin')) {
+        // vê tudo
+    } elseif ($user->hasRole('dept_head')) {
+        $query->whereHas('roles', fn($q) =>
+            $q->whereIn('name', ['coordinator', 'tutor'])
+        );
+    } elseif ($user->hasRole('coordinator')) {
+        $query->whereHas('roles', fn($q) => $q->where('name', 'supervisor'));
+    } else {
+        return response()->json(['data' => []]);
+    }
+
+    $query
+        ->when($request->status, fn($q) => $q->where('status', $request->status))
+        ->when($request->role,   fn($q) =>
+            $q->whereHas('roles', fn($r) => $r->where('name', $request->role))
+        );
+
+    $users = $query->latest()->paginate(20);
+
+    // Transforma a coleção para incluir campos extra do perfil de supervisor
+    $users->getCollection()->transform(function ($user) {
+        $userArray = $user->toArray();
+
+        if ($user->supervisorProfile) {
+            $userArray['supervisor_profile_id'] = $user->supervisorProfile->id;
+            $userArray['academic_rank']         = $user->supervisorProfile->academic_rank;
+            $userArray['department']            = $user->supervisorProfile->department;
+            $userArray['department_id']         = $user->supervisorProfile->department_id;
+            $userArray['estagiarios_count']     = $user->supervisorProfile->activeCount();   // ← ESSENCIAL
         } else {
-            return response()->json(['data' => []]);
+            $userArray['supervisor_profile_id'] = null;
+            $userArray['academic_rank']         = null;
+            $userArray['department']            = null;
+            $userArray['department_id']         = null;
+            $userArray['estagiarios_count']     = 0;
         }
 
-        $query
-            ->when($request->status, fn($q) => $q->where('status', $request->status))
-            ->when($request->role,   fn($q) =>
-                $q->whereHas('roles', fn($r) => $r->where('name', $request->role))
-            );
+        return $userArray;
+    });
 
-        $users = $query->latest()->paginate(20);
-
-        // Adiciona department e academic_rank
-        $users->getCollection()->transform(function ($user) {
-            $userArray = $user->toArray();
-            $userArray['academic_rank'] = $user->supervisorProfile->academic_rank ?? null;
-            $userArray['department']    = $user->supervisorProfile->department ?? null;
-            $userArray['department_id'] = $user->supervisorProfile->department_id ?? null;
-            // Campo essencial para alocação de estágios
-            $userArray['supervisor_profile_id'] = $user->supervisorProfile->id ?? null;
-            return $userArray;
-        });
-
-        return response()->json($users);
-    }
+    return response()->json($users);
+}
 
     // ─────────────────────────────────────────────────────────
     // GET /users/{user}

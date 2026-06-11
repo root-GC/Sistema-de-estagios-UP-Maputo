@@ -10,7 +10,10 @@ use Illuminate\Database\Eloquent\Model;
 // ============================================================
 class StudentProfile extends \Illuminate\Database\Eloquent\Model
 {
-    protected $fillable = ['user_id', 'course_id', 'student_number', 'current_year'];
+    protected $fillable = [
+    'user_id', 'course_id', 'student_number', 'current_year',
+    'bi_numero', 'bi_data_emissao', 'pai_nome', 'mae_nome',
+];
  
     public function user()        { return $this->belongsTo(User::class); }
     public function course()      { return $this->belongsTo(Course::class); }

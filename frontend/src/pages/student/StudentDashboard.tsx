@@ -1,9 +1,9 @@
 // src/pages/student/StudentDashboard.tsx
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { get, post } from '../../api/api';
+import { get, post, storageUrl } from '../../api/api';
 
 /* ─── Tipos ─── */
 interface InternshipData {
@@ -24,12 +24,14 @@ interface InternshipData {
 interface DevelopmentPlan {
   id: number;
   title: string;
+  file_url?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   submitted_at?: string;
 }
 
 interface ActivityPlan {
   id: number;
+  file_url?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   submitted_at?: string;
 }
@@ -45,7 +47,7 @@ interface Project {
   id: number;
   title: string;
   description?: string;
-  file_path?: string;
+  file_url?: string | null;
   submitted_at?: string;
 }
 
@@ -53,7 +55,7 @@ interface PortfolioStatus {
   portfolio?: {
     id: number;
     status: string;
-    documents: { id: number; document_type: string }[];
+    documents: { id: number; document_type: string; file_url?: string | null }[];
   };
   missing_documents: string[];
   is_complete: boolean;
@@ -120,16 +122,20 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Coordenador do curso (para visualização)
+  // Coordenador do curso
   const [coordinator, setCoordinator] = useState<CoordinatorInfo | null>(null);
 
   // Planos
   const [devPlans, setDevPlans] = useState<DevelopmentPlan[]>([]);
   const [actPlans, setActPlans] = useState<ActivityPlan[]>([]);
-  const [formPDI, setFormPDI] = useState({ title: '', file_path: '' });
-  const [formPlanoAtiv, setFormPlanoAtiv] = useState({ file_path: '' });
+  const [pdiFile, setPdiFile] = useState<File | null>(null);
+  const [pdiTitle, setPdiTitle] = useState('');
   const [savingPDI, setSavingPDI] = useState(false);
+  const [planoFile, setPlanoFile] = useState<File | null>(null);
   const [savingPlano, setSavingPlano] = useState(false);
+
+  const pdiFileRef = useRef<HTMLInputElement>(null);
+  const planoFileRef = useRef<HTMLInputElement>(null);
 
   // Diários
   const [journals, setJournals] = useState<Journal[]>([]);
@@ -140,16 +146,25 @@ export default function StudentDashboard() {
   // Projetos
   const [projects, setProjects] = useState<Project[]>([]);
   const [showProjectForm, setShowProjectForm] = useState(false);
-  const [formProject, setFormProject] = useState({ title: '', description: '', file_path: '' });
+  const [projTitle, setProjTitle] = useState('');
+  const [projDescription, setProjDescription] = useState('');
+  const [projFile, setProjFile] = useState<File | null>(null);
   const [savingProject, setSavingProject] = useState(false);
+  const projFileRef = useRef<HTMLInputElement>(null);
 
   // Portefólio
   const [portfolio, setPortfolio] = useState<PortfolioStatus | null>(null);
   const [submittingPortfolio, setSubmittingPortfolio] = useState(false);
   const [portfolioMsg, setPortfolioMsg] = useState('');
+  const [portfolioFiles, setPortfolioFiles] = useState<Record<string, File | null>>({});
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
 
   // Solicitação de estágio
   const [empresas, setEmpresas] = useState<string[]>(['', '', '', '', '']);
+  const [biNumero, setBiNumero] = useState('');
+  const [biDataEmissao, setBiDataEmissao] = useState('');
+  const [paiNome, setPaiNome] = useState('');
+  const [maeNome, setMaeNome] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
   const [requestMsg, setRequestMsg] = useState('');
 
@@ -161,7 +176,6 @@ export default function StudentDashboard() {
       const res = await get<{ internship: InternshipData | null }>('/dashboard');
       if (res.internship) {
         setInternship(res.internship);
-        // Carregar dados relacionados
         const [dev, act, jour, proj, port] = await Promise.all([
           get<DevelopmentPlan[]>(`/internships/${res.internship.id}/development-plans`).catch(() => [] as DevelopmentPlan[]),
           get<ActivityPlan[]>(`/internships/${res.internship.id}/activity-plans`).catch(() => [] as ActivityPlan[]),
@@ -177,7 +191,6 @@ export default function StudentDashboard() {
       } else {
         setInternship(null);
       }
-      // Buscar coordenador do curso (para exibição na aba solicitar)
       const coordRes = await get<{ data: CoordinatorInfo }>('/dashboard/coordinator').catch(() => null);
       if (coordRes?.data) setCoordinator(coordRes.data);
     } catch (err: any) {
@@ -194,14 +207,13 @@ export default function StudentDashboard() {
     navigate('/login');
   };
 
-  // Atualizar array de empresas
+  // ── Solicitação de estágio ──
   const updateEmpresa = (index: number, value: string) => {
     const newEmpresas = [...empresas];
     newEmpresas[index] = value;
     setEmpresas(newEmpresas);
   };
 
-  // Enviar requisição de estágio
   const submitInternshipRequest = async (e: FormEvent) => {
     e.preventDefault();
     const filled = empresas.filter(e => e.trim() !== '');
@@ -214,10 +226,18 @@ export default function StudentDashboard() {
     try {
       await post('/internships/request', {
         empresas_pretendidas: filled,
+        bi_numero: biNumero,
+        bi_data_emissao: biDataEmissao,
+        pai_nome: paiNome,
+        mae_nome: maeNome,
       });
-      setRequestMsg('Requisição enviada com sucesso! Aguarde a aprovação do coordenador.');
+      setRequestMsg('Requisição enviada com sucesso!');
       setEmpresas(['', '', '', '', '']);
-      fetchDashboard(); // recarregar para mostrar o estágio pendente
+      setBiNumero('');
+      setBiDataEmissao('');
+      setPaiNome('');
+      setMaeNome('');
+      fetchDashboard();
     } catch (err: any) {
       alert(err?.message || 'Erro ao enviar requisição.');
     } finally {
@@ -225,16 +245,24 @@ export default function StudentDashboard() {
     }
   };
 
-  // Submeter PDI
+  // ── Submeter PDI ──
   const submitPDI = async (e: FormEvent) => {
     e.preventDefault();
-    if (!internship) return;
+    if (!internship || !pdiFile || !pdiTitle.trim()) return;
     setSavingPDI(true);
     try {
-      await post(`/internships/${internship.id}/development-plans`, formPDI);
-      setFormPDI({ title: '', file_path: '' });
+      const formData = new FormData();
+      formData.append('title', pdiTitle);
+      formData.append('file', pdiFile);
+      await post(`/internships/${internship.id}/development-plans`, formData);
+      setPdiTitle('');
+      setPdiFile(null);
       const plans = await get<DevelopmentPlan[]>(`/internships/${internship.id}/development-plans`);
       setDevPlans(plans);
+      if (internship.id) {
+        const port = await get<PortfolioStatus>(`/internships/${internship.id}/portfolio`).catch(() => null);
+        setPortfolio(port);
+      }
     } catch (err: any) {
       alert(err?.message || 'Erro ao submeter PDI.');
     } finally {
@@ -242,16 +270,22 @@ export default function StudentDashboard() {
     }
   };
 
-  // Submeter Plano de Actividades
+  // ── Submeter Plano de Actividades ──
   const submitPlanoAtiv = async (e: FormEvent) => {
     e.preventDefault();
-    if (!internship) return;
+    if (!internship || !planoFile) return;
     setSavingPlano(true);
     try {
-      await post(`/internships/${internship.id}/activity-plans`, formPlanoAtiv);
-      setFormPlanoAtiv({ file_path: '' });
+      const formData = new FormData();
+      formData.append('file', planoFile);
+      await post(`/internships/${internship.id}/activity-plans`, formData);
+      setPlanoFile(null);
       const plans = await get<ActivityPlan[]>(`/internships/${internship.id}/activity-plans`);
       setActPlans(plans);
+      if (internship.id) {
+        const port = await get<PortfolioStatus>(`/internships/${internship.id}/portfolio`).catch(() => null);
+        setPortfolio(port);
+      }
     } catch (err: any) {
       alert(err?.message || 'Erro ao submeter plano.');
     } finally {
@@ -259,7 +293,7 @@ export default function StudentDashboard() {
     }
   };
 
-  // Submeter Diário
+  // ── Submeter Diário ──
   const submitJournal = async (e: FormEvent) => {
     e.preventDefault();
     if (!internship) return;
@@ -270,6 +304,10 @@ export default function StudentDashboard() {
       setShowJournalForm(false);
       const j = await get<Journal[]>(`/internships/${internship.id}/journals`);
       setJournals(j);
+      if (internship.id) {
+        const port = await get<PortfolioStatus>(`/internships/${internship.id}/portfolio`).catch(() => null);
+        setPortfolio(port);
+      }
     } catch (err: any) {
       alert(err?.message || 'Erro ao guardar diário.');
     } finally {
@@ -277,17 +315,27 @@ export default function StudentDashboard() {
     }
   };
 
-  // Submeter Projeto
+  // ── Submeter Projeto ──
   const submitProject = async (e: FormEvent) => {
     e.preventDefault();
-    if (!internship) return;
+    if (!internship || !projFile || !projTitle.trim()) return;
     setSavingProject(true);
     try {
-      await post(`/internships/${internship.id}/projects`, formProject);
-      setFormProject({ title: '', description: '', file_path: '' });
+      const formData = new FormData();
+      formData.append('title', projTitle);
+      if (projDescription) formData.append('description', projDescription);
+      formData.append('file', projFile);
+      await post(`/internships/${internship.id}/projects`, formData);
+      setProjTitle('');
+      setProjDescription('');
+      setProjFile(null);
       setShowProjectForm(false);
       const p = await get<Project[]>(`/internships/${internship.id}/projects`);
       setProjects(p);
+      if (internship.id) {
+        const port = await get<PortfolioStatus>(`/internships/${internship.id}/portfolio`).catch(() => null);
+        setPortfolio(port);
+      }
     } catch (err: any) {
       alert(err?.message || 'Erro ao submeter projeto.');
     } finally {
@@ -295,23 +343,7 @@ export default function StudentDashboard() {
     }
   };
 
-  // Portefólio: adicionar documento
-  const addPortfolioDoc = async (type: string) => {
-    if (!internship) return;
-    try {
-      await post(`/internships/${internship.id}/portfolio/document`, {
-        document_type: type,
-        file_path: `uploads/${type}_${Date.now()}.pdf`,
-      });
-      const port = await get<PortfolioStatus>(`/internships/${internship.id}/portfolio`);
-      setPortfolio(port);
-      setPortfolioMsg(`Documento "${type}" adicionado.`);
-    } catch (err: any) {
-      alert(err?.message || 'Erro ao adicionar documento.');
-    }
-  };
-
-  // Portefólio: submeter
+  // ── Portefólio: submissão final ──
   const submitPortfolio = async () => {
     if (!internship) return;
     setSubmittingPortfolio(true);
@@ -455,7 +487,7 @@ export default function StudentDashboard() {
           {view === 'solicitar' && (
             <div>
               <div className="page-title">Solicitar Estágio</div>
-              <div className="page-subtitle">Indique até 5 empresas onde gostaria de estagiar</div>
+              <div className="page-subtitle">Indique até 5 empresas e os seus dados pessoais</div>
 
               {coordinator && (
                 <div className="card mb-4" style={{ maxWidth: 400 }}>
@@ -467,17 +499,35 @@ export default function StudentDashboard() {
 
               {requestMsg && <Alert type="success">{requestMsg}</Alert>}
 
-              <div className="card" style={{ maxWidth: 500 }}>
+              <div className="card" style={{ maxWidth: 600 }}>
                 <form onSubmit={submitInternshipRequest}>
+                  <div className="card-title">Dados Pessoais (opcionais)</div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Nº do BI</label>
+                      <input className="form-input" value={biNumero} onChange={e => setBiNumero(e.target.value)} placeholder="Ex: 100506109393P" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Data de emissão do BI</label>
+                      <input className="form-input" type="date" value={biDataEmissao} onChange={e => setBiDataEmissao(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Nome do Pai</label>
+                      <input className="form-input" value={paiNome} onChange={e => setPaiNome(e.target.value)} placeholder="Nome completo" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Nome da Mãe</label>
+                      <input className="form-input" value={maeNome} onChange={e => setMaeNome(e.target.value)} placeholder="Nome completo" />
+                    </div>
+                  </div>
+
+                  <div className="card-title" style={{ marginTop: 20 }}>Empresas Pretendidas</div>
                   {empresas.map((emp, idx) => (
                     <div className="form-group" key={idx}>
                       <label className="form-label">Empresa {idx + 1}</label>
-                      <input
-                        className="form-input"
-                        value={emp}
-                        onChange={e => updateEmpresa(idx, e.target.value)}
-                        placeholder="Nome da empresa"
-                      />
+                      <input className="form-input" value={emp} onChange={e => updateEmpresa(idx, e.target.value)} placeholder="Nome da empresa" />
                     </div>
                   ))}
                   <button className="btn btn-primary" disabled={sendingRequest}>
@@ -492,7 +542,7 @@ export default function StudentDashboard() {
           {view === 'planos' && internship && (
             <div>
               <div className="page-title">Planos de Desenvolvimento e Actividades</div>
-              <div className="page-subtitle">Submeter PDI e Plano de Actividades para aprovação</div>
+              <div className="page-subtitle">Importar ficheiro e submeter para aprovação</div>
 
               <div className="grid grid-2">
                 {/* PDI */}
@@ -501,19 +551,43 @@ export default function StudentDashboard() {
                   <form onSubmit={submitPDI} style={{ marginBottom: 16 }}>
                     <div className="form-group">
                       <label className="form-label">Título</label>
-                      <input className="form-input" value={formPDI.title} onChange={e => setFormPDI(f => ({ ...f, title: e.target.value }))} placeholder="Título do PDI" required />
+                      <input className="form-input" value={pdiTitle} onChange={e => setPdiTitle(e.target.value)} placeholder="Título do PDI" required />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Ficheiro (caminho simulado)</label>
-                      <input className="form-input" value={formPDI.file_path} onChange={e => setFormPDI(f => ({ ...f, file_path: e.target.value }))} placeholder="Ex: uploads/pdi_meu.pdf" />
+                      <label className="form-label">Ficheiro (PDF, DOC, DOCX)</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx"
+                          ref={pdiFileRef}
+                          style={{ display: 'none' }}
+                          onChange={e => setPdiFile(e.target.files?.[0] || null)}
+                        />
+                        <button type="button" className="btn btn-secondary" onClick={() => pdiFileRef.current?.click()}>
+                          {pdiFile ? 'Alterar' : 'Importar'}
+                        </button>
+                        {pdiFile && (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            {pdiFile.name} ({(pdiFile.size / 1024).toFixed(1)} KB)
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <button className="btn btn-primary" disabled={savingPDI}>{savingPDI ? 'A submeter…' : 'Submeter PDI'}</button>
+                    {pdiFile && pdiTitle.trim() && (
+                      <button className="btn btn-primary" disabled={savingPDI}>
+                        {savingPDI ? 'A submeter…' : 'Submeter PDI'}
+                      </button>
+                    )}
                   </form>
                   <hr />
                   {devPlans.length === 0 && <p style={{ color: 'var(--muted)' }}>Nenhum PDI submetido.</p>}
                   {devPlans.map(p => (
                     <div key={p.id} className="flex justify-between items-center" style={{ padding: '8px 0' }}>
-                      <div><strong>{p.title}</strong><br /><span style={{ fontSize: 11 }}>{p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('pt-PT') : ''}</span></div>
+                      <div>
+                        <strong>{p.title}</strong>
+                        <div style={{ fontSize: 11 }}>{p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('pt-PT') : ''}</div>
+                        {p.file_url && <a href={storageUrl(p.file_url)} target="_blank" className="btn btn-sm btn-secondary" style={{ marginLeft: 8 }}>Download</a>}
+                      </div>
                       <Badge status={p.status} />
                     </div>
                   ))}
@@ -524,16 +598,39 @@ export default function StudentDashboard() {
                   <div className="card-title">Plano de Actividades</div>
                   <form onSubmit={submitPlanoAtiv} style={{ marginBottom: 16 }}>
                     <div className="form-group">
-                      <label className="form-label">Ficheiro (caminho simulado)</label>
-                      <input className="form-input" value={formPlanoAtiv.file_path} onChange={e => setFormPlanoAtiv(f => ({ ...f, file_path: e.target.value }))} placeholder="Ex: uploads/plano_ativ.pdf" />
+                      <label className="form-label">Ficheiro (PDF, DOC, DOCX)</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx"
+                          ref={planoFileRef}
+                          style={{ display: 'none' }}
+                          onChange={e => setPlanoFile(e.target.files?.[0] || null)}
+                        />
+                        <button type="button" className="btn btn-secondary" onClick={() => planoFileRef.current?.click()}>
+                          {planoFile ? 'Alterar' : 'Importar'}
+                        </button>
+                        {planoFile && (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            {planoFile.name} ({(planoFile.size / 1024).toFixed(1)} KB)
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <button className="btn btn-primary" disabled={savingPlano}>{savingPlano ? 'A submeter…' : 'Submeter Plano'}</button>
+                    {planoFile && (
+                      <button className="btn btn-primary" disabled={savingPlano}>
+                        {savingPlano ? 'A submeter…' : 'Submeter Plano'}
+                      </button>
+                    )}
                   </form>
                   <hr />
                   {actPlans.length === 0 && <p style={{ color: 'var(--muted)' }}>Nenhum plano submetido.</p>}
                   {actPlans.map(p => (
                     <div key={p.id} className="flex justify-between items-center" style={{ padding: '8px 0' }}>
-                      <div><span style={{ fontSize: 11 }}>{p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('pt-PT') : ''}</span></div>
+                      <div>
+                        <span style={{ fontSize: 11 }}>{p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('pt-PT') : ''}</span>
+                        {p.file_url && <a href={storageUrl(p.file_url)} target="_blank" className="btn btn-sm btn-secondary" style={{ marginLeft: 8 }}>Download</a>}
+                      </div>
                       <Badge status={p.status} />
                     </div>
                   ))}
@@ -604,17 +701,37 @@ export default function StudentDashboard() {
                   <form onSubmit={submitProject}>
                     <div className="form-group">
                       <label className="form-label">Título</label>
-                      <input className="form-input" value={formProject.title} onChange={e => setFormProject(f => ({ ...f, title: e.target.value }))} required />
+                      <input className="form-input" value={projTitle} onChange={e => setProjTitle(e.target.value)} required />
                     </div>
                     <div className="form-group">
                       <label className="form-label">Descrição</label>
-                      <textarea className="form-textarea" rows={3} value={formProject.description} onChange={e => setFormProject(f => ({ ...f, description: e.target.value }))} />
+                      <textarea className="form-textarea" rows={3} value={projDescription} onChange={e => setProjDescription(e.target.value)} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Ficheiro (caminho simulado)</label>
-                      <input className="form-input" value={formProject.file_path} onChange={e => setFormProject(f => ({ ...f, file_path: e.target.value }))} />
+                      <label className="form-label">Ficheiro (PDF, DOC, DOCX, ZIP)</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx,.zip"
+                          ref={projFileRef}
+                          style={{ display: 'none' }}
+                          onChange={e => setProjFile(e.target.files?.[0] || null)}
+                        />
+                        <button type="button" className="btn btn-secondary" onClick={() => projFileRef.current?.click()}>
+                          {projFile ? 'Alterar' : 'Importar'}
+                        </button>
+                        {projFile && (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            {projFile.name} ({(projFile.size / 1024).toFixed(1)} KB)
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <button className="btn btn-primary" disabled={savingProject}>{savingProject ? 'A submeter…' : 'Submeter Projeto'}</button>
+                    {projFile && projTitle.trim() && (
+                      <button className="btn btn-primary" disabled={savingProject}>
+                        {savingProject ? 'A submeter…' : 'Submeter Projeto'}
+                      </button>
+                    )}
                   </form>
                 </div>
               )}
@@ -626,6 +743,7 @@ export default function StudentDashboard() {
                       <strong>{p.title}</strong>
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{p.description}</div>
                       <div style={{ fontSize: 11 }}>{p.submitted_at ? new Date(p.submitted_at).toLocaleDateString('pt-PT') : ''}</div>
+                      {p.file_url && <a href={storageUrl(p.file_url)} target="_blank" className="btn btn-sm btn-secondary" style={{ marginLeft: 8 }}>Download</a>}
                     </div>
                   </div>
                 </div>
@@ -638,7 +756,7 @@ export default function StudentDashboard() {
           {view === 'portfolio' && internship && (
             <div>
               <div className="page-title">Portefólio Final</div>
-              <div className="page-subtitle">Submissão do portefólio com todos os documentos obrigatórios</div>
+              <div className="page-subtitle">Importar cada documento obrigatório e depois submeter o portefólio</div>
 
               {portfolioMsg && <Alert type="success">{portfolioMsg}</Alert>}
 
@@ -647,11 +765,63 @@ export default function StudentDashboard() {
                   <div className="card-title">Documentos Obrigatórios</div>
                   {REQUIRED_DOCS.map(doc => {
                     const done = presentDocs.includes(doc);
+                    const docEntry = portfolio?.portfolio?.documents?.find(d => d.document_type === doc);
+                    const selectedFile = portfolioFiles[doc] || null;
+                    const isUploading = uploadingDoc === doc;
+
                     return (
-                      <div key={doc} className="flex justify-between items-center" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                        <span>{done ? '✅' : '⬜'} {doc.replace(/_/g, ' ')}</span>
+                      <div key={doc} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                        <div className="flex justify-between items-center">
+                          <span>{done ? '✅' : '⬜'} {doc.replace(/_/g, ' ')}</span>
+                          {done && docEntry?.file_url && (
+                            <a href={storageUrl(docEntry.file_url)} target="_blank" className="btn btn-sm btn-secondary">Download</a>
+                          )}
+                        </div>
                         {!done && (
-                          <button className="btn btn-sm btn-secondary" onClick={() => addPortfolioDoc(doc)}>+ Adicionar</button>
+                          <div className="flex items-center gap-2 mt-2">
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx"
+                              id={`file-${doc}`}
+                              style={{ display: 'none' }}
+                              onChange={e => {
+                                const file = e.target.files?.[0] || null;
+                                setPortfolioFiles(prev => ({ ...prev, [doc]: file }));
+                              }}
+                            />
+                            <label htmlFor={`file-${doc}`} className="btn btn-sm btn-secondary" style={{ cursor: 'pointer' }}>
+                              {selectedFile ? 'Alterar' : 'Importar'}
+                            </label>
+                            {selectedFile && (
+                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                                {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                              </span>
+                            )}
+                            {selectedFile && (
+                              <button
+                                className="btn btn-sm btn-primary"
+                                disabled={isUploading}
+                                onClick={async () => {
+                                  setUploadingDoc(doc);
+                                  try {
+                                    const formData = new FormData();
+                                    formData.append('document_type', doc);
+                                    formData.append('file', selectedFile);
+                                    await post(`/internships/${internship.id}/portfolio/document`, formData);
+                                    const port = await get<PortfolioStatus>(`/internships/${internship.id}/portfolio`);
+                                    setPortfolio(port);
+                                    setPortfolioFiles(prev => ({ ...prev, [doc]: null }));
+                                  } catch (err: any) {
+                                    alert(err?.message || 'Erro ao enviar documento.');
+                                  } finally {
+                                    setUploadingDoc(null);
+                                  }
+                                }}
+                              >
+                                {isUploading ? 'A enviar…' : 'Submeter'}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     );

@@ -1,6 +1,7 @@
 // src/api/api.ts
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const STORAGE_BASE = import.meta.env.VITE_STORAGE_URL || 'http://localhost:8000';  // base do storage
 
 interface ApiError {
   message?: string;
@@ -14,14 +15,20 @@ export async function api<T = any>(
 ): Promise<T> {
   const token = localStorage.getItem('token');
 
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const isFormData = body instanceof FormData;
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    headers,
+    body: isFormData ? (body as FormData) : body ? JSON.stringify(body) : undefined,
   });
 
   if (res.status === 401) {
@@ -33,6 +40,14 @@ export async function api<T = any>(
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw data as ApiError;
   return data as T;
+}
+
+// Função auxiliar para construir URLs absolutas para ficheiros do storage
+export function storageUrl(path: string): string {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${STORAGE_BASE}${normalizedPath}`;
 }
 
 export const get   = <T = any>(p: string)               => api<T>('GET', p);

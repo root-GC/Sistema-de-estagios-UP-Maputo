@@ -3,12 +3,12 @@ import { useEffect, useState, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { get, post, patch } from '../../api/api';
+import { get, post, patch, storageUrl } from '../../api/api';
 
 /* ─── Tipos ─── */
 interface Student {
   id: number;
-  user: { name: string; email?: string };   // ← agora com user.name
+  user: { name: string; email?: string };
   student_number: string;
   current_year: number;
   course?: { id: number; name: string; code: string };
@@ -42,7 +42,7 @@ interface Carta {
   internship_id: number;
   file_path: string;
   generated_at: string;
-  student_name?: string;          // nome do estudante devolvido pelo backend
+  student_name?: string;
 }
 
 interface Avaliacao {
@@ -77,6 +77,12 @@ interface Notificacao {
   message: string;
   is_read: boolean;
   created_at: string;
+}
+
+interface Period {
+  id: number;
+  name: string;
+  academic_year: string;
 }
 
 /* ─── Utilitários ─── */
@@ -132,6 +138,7 @@ export default function CoordinatorDashboard() {
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [notifications, setNotifications] = useState<Notificacao[]>([]);
+  const [periods, setPeriods] = useState<Period[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -167,16 +174,18 @@ export default function CoordinatorDashboard() {
     setLoading(true);
     setError('');
     try {
-      const [reqRes, supRes, depRes, instRes] = await Promise.all([
+      const [reqRes, supRes, depRes, instRes, dashRes] = await Promise.all([
         get<{ data: RequisicaoEstagio[] }>('/internships?status=pendente,aprovada'),
         get<{ data: Supervisor[] }>('/users?role=supervisor'),
         get<{ data: Departamento[] }>('/departments').catch(() => ({ data: [] as Departamento[] })),
         get<{ data: Institution[] }>('/institutions').catch(() => ({ data: [] as Institution[] })),
+        get<{ periods: Period[] }>('/dashboard').catch(() => ({ periods: [] })),
       ]);
       setRequisicoes(reqRes.data || []);
       setSupervisores(supRes.data || []);
       setDepartamentos(depRes.data || []);
       setInstitutions(instRes.data || []);
+      setPeriods(dashRes.periods || []);
     } catch (err: any) {
       setError(err?.message || 'Erro ao carregar dados.');
     } finally {
@@ -194,6 +203,16 @@ export default function CoordinatorDashboard() {
     }
   }, []);
 
+  // Carregar pauta / avaliações
+  const fetchPauta = useCallback(async () => {
+    try {
+      const res = await get<{ data: Avaliacao[] }>('/grade-sheets');
+      setAvaliacoes(res.data || []);
+    } catch {
+      setAvaliacoes([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
     fetchNotifications();
@@ -204,12 +223,12 @@ export default function CoordinatorDashboard() {
       get<{ data: Carta[] }>('/credential-letters').then(r => setCartas(r.data || [])).catch(() => {});
     }
     if (view === 'pauta') {
-      get<{ data: Avaliacao[] }>('/grade-sheets').then(r => setAvaliacoes(r.data || [])).catch(() => {});
+      fetchPauta();
     }
     if (view === 'notificacoes') {
       fetchNotifications();
     }
-  }, [view, fetchNotifications]);
+  }, [view, fetchNotifications, fetchPauta]);
 
   const handleLogout = async () => {
     await logout();
@@ -324,14 +343,23 @@ export default function CoordinatorDashboard() {
   };
 
   const baixarCarta = (carta: Carta) => {
-  window.open(carta.file_path, '_blank');
-};
+    window.open(storageUrl(carta.file_path), '_blank');
+  };
 
   const exportarPauta = async () => {
+    const courseId = user?.profile?.courses?.[0]?.id;
+    if (!courseId || periods.length === 0) {
+      alert('Sem curso ou período disponível.');
+      return;
+    }
+    const periodId = periods[periods.length - 1].id; // último período
     try {
-      await post('/grade-sheets', {});
+      await post('/grade-sheets', {
+        course_id: courseId,
+        period_id: periodId,
+      });
       alert('Pauta gerada. Consulte a lista.');
-      get<{ data: Avaliacao[] }>('/grade-sheets').then(r => setAvaliacoes(r.data || []));
+      fetchPauta();
     } catch (err: any) {
       alert(err?.message || 'Erro ao gerar pauta.');
     }
@@ -340,7 +368,7 @@ export default function CoordinatorDashboard() {
   const exportarSigeup = async () => {
     try {
       const res = await post<{ file_path: string }>('/grade-sheets/export', {});
-      window.open(`/storage/${res.file_path}`, '_blank');
+      window.open(storageUrl(res.file_path), '_blank');
     } catch (err: any) {
       alert(err?.message || 'Erro ao exportar SIGEUP.');
     }
@@ -622,19 +650,34 @@ export default function CoordinatorDashboard() {
           {view === 'pauta' && (
             <div>
               <div className="section-header">
-                <div><div className="page-title">Pauta de Avaliação</div><div className="page-subtitle">RF-013 — Exportar pauta final</div></div>
-                <button className="btn btn-primary" onClick={exportarPauta}>Gerar Pauta</button>
+                <div>
+                  <div className="page-title">Pauta de Avaliação</div>
+                  <div className="page-subtitle">Estudantes com nota final registada</div>
+                </div>
+                <button className="btn btn-primary" onClick={exportarPauta}>
+                  <span className="material-symbols-outlined">print</span> Gerar Pauta
+                </button>
               </div>
               <div className="card">
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th>Estudante</th><th>Nota</th><th>Estado</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Estudante</th>
+                        <th>Nota</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {avaliacoes.length === 0 ? (
-                        <tr><td colSpan={3} className="text-center">Nenhuma avaliação</td></tr>
+                        <tr><td colSpan={3} className="text-center">Nenhum estudante avaliado.</td></tr>
                       ) : (
                         avaliacoes.map(av => (
-                          <tr key={av.id}><td>{av.student_name}</td><td>{av.nota}</td><td>{av.estado}</td></tr>
+                          <tr key={av.id}>
+                            <td>{av.student_name}</td>
+                            <td>{av.nota}</td>
+                            <td>{av.estado}</td>
+                          </tr>
                         ))
                       )}
                     </tbody>
