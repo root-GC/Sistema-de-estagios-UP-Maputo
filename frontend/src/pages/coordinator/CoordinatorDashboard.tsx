@@ -330,7 +330,6 @@ export default function CoordinatorDashboard() {
     setGerandoCarta(true);
     try {
       await post(`/internships/${cartaEstagio.id}/credential`, {});
-      // Recarrega a lista de cartas emitidas
       const res = await get<{ data: Carta[] }>('/credential-letters');
       setCartas(res.data || []);
       setCartaEstagio(null);
@@ -352,7 +351,7 @@ export default function CoordinatorDashboard() {
       alert('Sem curso ou período disponível.');
       return;
     }
-    const periodId = periods[periods.length - 1].id; // último período
+    const periodId = periods[periods.length - 1].id;
     try {
       await post('/grade-sheets', {
         course_id: courseId,
@@ -365,10 +364,34 @@ export default function CoordinatorDashboard() {
     }
   };
 
+  // Exportar SIGEUP – download automático do CSV
   const exportarSigeup = async () => {
     try {
-      const res = await post<{ file_path: string }>('/grade-sheets/export', {});
-      window.open(storageUrl(res.file_path), '_blank');
+      const token = localStorage.getItem('token');
+      const base = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+      const response = await fetch(`${base}/grade-sheets/export`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'text/csv',
+        },
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || 'Erro ao exportar SIGEUP.');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'pauta_sigeup.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (err: any) {
       alert(err?.message || 'Erro ao exportar SIGEUP.');
     }
@@ -502,7 +525,7 @@ export default function CoordinatorDashboard() {
               <div className="section-header">
                 <div>
                   <div className="page-title">Pedidos de Estágio</div>
-                  <div className="page-subtitle">Aprovar, rejeitar e alocar supervisor (RF-002)</div>
+                  <div className="page-subtitle">Aprovar, rejeitar e alocar supervisor</div>
                 </div>
               </div>
               <div className="card">
@@ -599,7 +622,7 @@ export default function CoordinatorDashboard() {
           {view === 'cartas' && (
             <div>
               <div className="section-header">
-                <div><div className="page-title">Cartas Credenciais</div><div className="page-subtitle">Emitir e descarregar (RF-003)</div></div>
+                <div><div className="page-title">Cartas Credenciais</div><div className="page-subtitle">Emitir e descarregar</div></div>
               </div>
               <div className="card">
                 <div className="table-wrap">
@@ -658,32 +681,36 @@ export default function CoordinatorDashboard() {
                   <span className="material-symbols-outlined">print</span> Gerar Pauta
                 </button>
               </div>
-              <div className="card">
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Estudante</th>
-                        <th>Nota</th>
-                        <th>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {avaliacoes.length === 0 ? (
-                        <tr><td colSpan={3} className="text-center">Nenhum estudante avaliado.</td></tr>
-                      ) : (
-                        avaliacoes.map(av => (
+              {avaliacoes.length === 0 ? (
+                <div className="card" style={{ textAlign: 'center', padding: 40 }}>
+                  <p style={{ color: 'var(--muted)', marginBottom: 16 }}>
+                    Ainda não existem notas. O tutor e o supervisor devem avaliar o estagiário.
+                  </p>
+                </div>
+              ) : (
+                <div className="card">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Estudante</th>
+                          <th>Nota</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {avaliacoes.map(av => (
                           <tr key={av.id}>
                             <td>{av.student_name}</td>
                             <td>{av.nota}</td>
                             <td>{av.estado}</td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -691,8 +718,15 @@ export default function CoordinatorDashboard() {
           {view === 'sigeup' && (
             <div>
               <div className="page-title">Exportação SIGEUP</div>
-              <div className="page-subtitle">RF-014 — Gerar ficheiro para o SIGEUP</div>
-              <button className="btn btn-primary" onClick={exportarSigeup}>Exportar para SIGEUP</button>
+              <div className="page-subtitle">Gerar ficheiro CSV com as notas</div>
+              <div className="card" style={{ textAlign: 'center', padding: 40 }}>
+                <p style={{ color: 'var(--muted)', marginBottom: 16 }}>
+                  Gere o documento com a pauta completa (lista de estudantes, notas e situação final).
+                </p>
+                <button className="btn btn-primary" onClick={exportarSigeup}>
+                  <span className="material-symbols-outlined">picture_as_pdf</span> Baixar CSV da Pauta
+                </button>
+              </div>
             </div>
           )}
 

@@ -1,15 +1,7 @@
+// src/pages/auth/LoginPage.tsx
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { post } from '../../api/api';
-
-const TEST_ACCOUNTS = [
-  { label: 'Admin',            email: 'admin@up.ac.mz' },
-  { label: 'Chefe Repartição', email: 'chefe@up.ac.mz' },
-  { label: 'Coordenador',      email: 'coord@up.ac.mz' },
-  { label: 'Supervisor',       email: 'sup1@up.ac.mz'  },
-  { label: 'Estudante',        email: 'est1@up.ac.mz'  },
-];
 
 export function LoginPage() {
   const { login, setAuthScreen } = useAuth();
@@ -32,9 +24,8 @@ export function LoginPage() {
   };
 
   return (
-    <div className="auth-wrap" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+    <div className="auth-wrap">
       <div className="auth-box">
-        {/* Logo */}
         <div className="auth-logo">
           <div className="auth-logo-icon">
             <span className="material-symbols-outlined" style={{ fontSize: 32 }}>school</span>
@@ -96,24 +87,6 @@ export function LoginPage() {
             Registar-se
           </button>
         </p>
-
-        {import.meta.env.DEV && (
-          <div className="auth-test-accounts">
-            <p className="auth-test-label">Contas de teste · password: password</p>
-            <div className="auth-test-grid">
-              {TEST_ACCOUNTS.map(a => (
-                <button
-                  key={a.email}
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => { setEmail(a.email); setPassword('password'); }}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

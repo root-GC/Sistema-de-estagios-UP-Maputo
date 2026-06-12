@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
  
 use App\Http\Controllers\Controller;
-use Illuminate\Http\{Request, JsonResponse};
+use Illuminate\Http\{Request, Response, JsonResponse};
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use App\Models\{
@@ -93,62 +93,53 @@ class GradeSheetController extends Controller
     }
  
     // RF-014: Exportar para SIGEUP
-    public function exportSigeup(Request $request, GradeSheet $internshipGradeSheet): JsonResponse
-    {
-        $sheet = $internshipGradeSheet->load([
-            'items.internshipResult.internship.student.user',
-            'course','period',
-        ]);
- 
-        // Gerar CSV no formato SIGEUP
-        $rows   = ["NR;NOME;NOTA;APROVADO"];
-        $nr     = 1;
- 
-        foreach ($sheet->items as $item) {
-            $result  = $item->internshipResult;
-            $student = $result->internship->student->user;
-            $rows[]  = sprintf('%d;%s;%.2f;%s',
-                $nr++,
-                $student->name,
-                $result->final_score,
-                $result->approved ? 'SIM' : 'NÃO'
-            );
-        }
- 
-        $csv      = implode("\n", $rows);
-        $fileName = "sigeup_{$sheet->course->code}_{$sheet->period->academic_year}_" . now()->timestamp . ".csv";
-        $filePath = "exports/{$fileName}";
- 
-        // Em produção: Storage::put($filePath, $csv);
- 
-        $export = SigeupExport::create([
-            'grade_sheet_id' => $sheet->id,
-            'file_path'      => $filePath,
-            'exported_by'    => $request->user()->id,
-            'exported_at'    => now(),
-        ]);
- 
-        AuditLog::record('sigeup_export', 'SigeupExport', $export->id,
-            "Exportação SIGEUP: {$fileName}");
- 
-        return response()->json([
-            'export'   => $export,
-            'csv'      => $csv,     // em prod: URL de download
-            'filename' => $fileName,
-        ]);
-    }
-    public function exportLatestSigeup(): JsonResponse
-    {
-        // Encontra a pauta mais recente gerada pelo utilizador autenticado (ou geral)
-        $gradeSheet = GradeSheet::where('generated_by', auth()->id())
-            ->latest()
-            ->first();
+  public function exportSigeup(Request $request, GradeSheet $internshipGradeSheet): Response|JsonResponse
+{
+    $sheet = $internshipGradeSheet->load([
+        'items.internshipResult.internship.student.user',
+        'course', 'period',
+    ]);
 
-        if (!$gradeSheet) {
-            return response()->json(['message' => 'Nenhuma pauta encontrada.'], 404);
-        }
+    $rows = ["NR;NOME;NOTA;APROVADO"];
+    $nr = 1;
 
-        // Reutiliza a lógica de exportação
-        return $this->exportSigeup($gradeSheet);
+    foreach ($sheet->items as $item) {
+        $result  = $item->internshipResult;
+        $student = $result->internship->student->user;
+        $rows[]  = sprintf('%d;%s;%.2f;%s',
+            $nr++,
+            $student->name,
+            $result->final_score,
+            $result->approved ? 'SIM' : 'NÃO'
+        );
     }
+
+    $csv      = implode("\n", $rows);
+    $fileName = "sigeup_{$sheet->course->code}_{$sheet->period->academic_year}_" . now()->timestamp . ".csv";
+
+    // Registar exportação
+    SigeupExport::create([
+        'grade_sheet_id' => $sheet->id,
+        'file_path'      => 'exports/' . $fileName,
+        'exported_by'    => $request->user()->id,
+        'exported_at'    => now(),
+    ]);
+
+    return response($csv, 200, [
+        'Content-Type'        => 'text/csv; charset=UTF-8',
+        'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
+    ]);
+}
+public function exportLatestSigeup(Request $request): Response|JsonResponse
+{
+    $gradeSheet = GradeSheet::where('generated_by', auth()->id())
+        ->latest('generated_at')
+        ->first();
+
+    if (!$gradeSheet) {
+        return response()->json(['message' => 'Nenhuma pauta encontrada.'], 404);
+    }
+
+    return $this->exportSigeup($request, $gradeSheet);
+}
 }

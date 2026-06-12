@@ -140,9 +140,10 @@ Route::middleware('auth:sanctum')->group(function () {
         // Pautas
         Route::get('/grade-sheets',                                [GradeSheetController::class, 'index']);
         Route::post('/grade-sheets',                               [GradeSheetController::class, 'generate']);
+        Route::post('/grade-sheets/export',                        [GradeSheetController::class, 'exportLatestSigeup']);
         Route::get('/grade-sheets/{internshipGradeSheet}',         [GradeSheetController::class, 'show']);
         Route::post('/grade-sheets/{internshipGradeSheet}/export', [GradeSheetController::class, 'exportSigeup']);
-        Route::post('/grade-sheets/export',                        [GradeSheetController::class, 'exportLatestSigeup']);
+       
 
         // Estudantes elegíveis
         Route::get('/students/eligible',                           [InternshipController::class, 'eligibleStudents']);
