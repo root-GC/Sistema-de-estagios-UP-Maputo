@@ -19,6 +19,8 @@ class PartnerInstitutionController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+
+        // dd($request);
         $data = $request->validate([
             'name'                => 'required|string',
             'address'             => 'nullable|string',
